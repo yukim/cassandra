@@ -423,6 +423,9 @@ public final class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public void forceFlushBinary()
     {
+        if (memtable_.isClean())
+            return;
+
         submitFlush(binaryMemtable_.get());
     }
 

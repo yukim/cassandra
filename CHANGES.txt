@@ -1,3 +1,7 @@
+0.4-dev
+ * avoid flushing empty binarymemtable (CASSANDRA-532)
+ * explicitly close bloom filter, index filehandles (CASSANDRA-533)
+
 0.4.2
  * Add validation disallowing null keys (CASSANDRA-486)
  * Fix race conditions in TCPConnectionManager (CASSANDRA-487)

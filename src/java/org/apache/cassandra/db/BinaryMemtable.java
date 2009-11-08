@@ -121,6 +121,11 @@ public class BinaryMemtable
         }
     }
 
+    public boolean isClean()
+    {
+        return columnFamilies_.isEmpty();
+    }
+
     private void resolve(String key, byte[] buffer)
     {
             columnFamilies_.put(key, buffer);

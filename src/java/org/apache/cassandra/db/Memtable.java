@@ -42,7 +42,6 @@ public class Memtable implements Comparable<Memtable>
 	private static Logger logger_ = Logger.getLogger( Memtable.class );
 
     private boolean isFrozen_;
-    private volatile boolean isDirty_;
     private volatile boolean isFlushed_; // for tests, in particular forceBlockingFlush asserts this
 
     private int threshold_ = DatabaseDescriptor.getMemtableSize()*1024*1024;
@@ -135,7 +134,6 @@ public class Memtable implements Comparable<Memtable>
     void put(String key, ColumnFamily columnFamily)
     {
         assert !isFrozen_; // not 100% foolproof but hell, it's an assert
-        isDirty_ = true;
         resolve(key, columnFamily);
     }
 
@@ -248,9 +246,7 @@ public class Memtable implements Comparable<Memtable>
 
     public boolean isClean()
     {
-        // executor taskcount is inadequate for our needs here -- it can return zero under certain
-        // race conditions even though a task has been processed.
-        return !isDirty_;
+        return columnFamilies_.isEmpty();
     }
 
     /**
