@@ -1,3 +1,8 @@
+0.6.14?
+ * workaround large resultsets causing large allocation retention
+   by nio sockets (CASSANDRA-2654)
+
+
 0.6.13
  * shut down server for OOM on a Thrift thread (CASSANDRA-2269)
  * fix reversed slices on large supercolumn rows (CASSANDRA-2212)
