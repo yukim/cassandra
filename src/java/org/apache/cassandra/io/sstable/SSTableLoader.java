@@ -48,6 +48,7 @@ public class SSTableLoader
     private final String keyspace;
     private final Client client;
     private final OutputHandler outputHandler;
+    private final int maxThreadsPerDestination;
 
     static
     {
@@ -56,10 +57,17 @@ public class SSTableLoader
 
     public SSTableLoader(File directory, Client client, OutputHandler outputHandler)
     {
+       this(directory, client, outputHandler, 1);
+    }
+
+    public SSTableLoader(File directory, Client client, OutputHandler outputHandler, int numThreads)
+    {
+        assert numThreads > 0;
         this.directory = directory;
         this.keyspace = directory.getParentFile().getName();
         this.client = client;
         this.outputHandler = outputHandler;
+        this.maxThreadsPerDestination = numThreads;
     }
 
     protected Collection<SSTableReader> openSSTables()
@@ -137,7 +145,7 @@ public class SSTableLoader
                 continue;
             }
             Collection<Range<Token>> ranges = entry.getValue();
-            StreamOutSession session = StreamOutSession.create(keyspace, remote, new CountDownCallback(future, remote));
+            StreamOutSession session = StreamOutSession.create(keyspace, remote, System.nanoTime(), new CountDownCallback(future, remote), maxThreadsPerDestination);
             // transferSSTables assumes references have been acquired
             SSTableReader.acquireReferences(sstables);
             StreamOut.transferSSTables(session, sstables, ranges, OperationType.BULK_LOAD);
