@@ -21,6 +21,7 @@ package org.apache.cassandra.streaming;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
 import org.apache.commons.lang.StringUtils;
@@ -28,7 +29,6 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Pair;
 
@@ -54,8 +54,13 @@ public class StreamOutSession extends AbstractStreamSession
 
     public static StreamOutSession create(String table, InetAddress host, long sessionId, IStreamCallback callback)
     {
+        return create(table, host, sessionId, callback, 1);
+    }
+
+    public static StreamOutSession create(String table, InetAddress host, long sessionId, IStreamCallback callback, int maxConcurrency)
+    {
         Pair<InetAddress, Long> context = new Pair<InetAddress, Long>(host, sessionId);
-        StreamOutSession session = new StreamOutSession(table, context, callback);
+        StreamOutSession session = new StreamOutSession(table, context, callback, maxConcurrency);
         streams.put(context, session);
         return session;
     }
@@ -67,11 +72,13 @@ public class StreamOutSession extends AbstractStreamSession
 
     private final Map<String, PendingFile> files = new NonBlockingHashMap<String, PendingFile>();
 
-    private volatile String currentFile;
+    private final int maxConcurrency;
+    private final Queue<PendingFile> pendingFiles = new ConcurrentLinkedQueue<PendingFile>();
 
-    private StreamOutSession(String table, Pair<InetAddress, Long> context, IStreamCallback callback)
+    private StreamOutSession(String table, Pair<InetAddress, Long> context, IStreamCallback callback, int maxConcurrency)
     {
         super(table, context, callback);
+        this.maxConcurrency = maxConcurrency;
     }
 
     public void addFilesToStream(List<PendingFile> pendingFiles)
@@ -80,31 +87,32 @@ public class StreamOutSession extends AbstractStreamSession
         {
             if (logger.isDebugEnabled())
                 logger.debug("Adding file {} to be streamed.", pendingFile.getFilename());
+            this.pendingFiles.add(pendingFile);
             files.put(pendingFile.getFilename(), pendingFile);
         }
     }
 
-    public void retry()
+    public void retry(String file)
     {
-        streamFile(files.get(currentFile));
+        assert files.containsKey(file);
+        streamFile(files.get(file));
     }
 
     private void streamFile(PendingFile pf)
     {
         if (logger.isDebugEnabled())
             logger.debug("Streaming {} ...", pf);
-        currentFile = pf.getFilename();
+        files.put(pf.getFilename(), pf);
         MessagingService.instance().stream(new StreamHeader(table, getSessionId(), pf), getHost());
     }
 
-    public void startNext() throws IOException
+    public void finishAndStartNext(String finished) throws IOException
     {
-        assert files.containsKey(currentFile);
-        files.get(currentFile).sstable.releaseReference();
-        files.remove(currentFile);
-        Iterator<PendingFile> iter = files.values().iterator();
-        if (iter.hasNext())
-            streamFile(iter.next());
+        assert files.containsKey(finished);
+        files.get(finished).sstable.releaseReference();
+        files.remove(finished);
+        if (!pendingFiles.isEmpty())
+            streamFile(pendingFiles.poll());
     }
 
     protected void closeInternal(boolean success)
@@ -150,17 +158,25 @@ public class StreamOutSession extends AbstractStreamSession
 
     public void validateCurrentFile(String file)
     {
-        if (!file.equals(currentFile))
-            throw new IllegalStateException(String.format("target reports current file is %s but is %s", file, currentFile));
+        if (!files.containsKey(file))
+            throw new IllegalStateException(String.format("target reported current file %s is not in %s", file, files.keySet()));
     }
 
+    /**
+     * Begins streaming session with maximum concurrency specified in constructor.
+     * Note that concurrency is actually defined in MessagingService's streamExecutor.
+     */
     public void begin()
     {
-        PendingFile first = files.isEmpty() ? null : files.values().iterator().next();
-        currentFile = first == null ? null : first.getFilename();
-        StreamHeader header = new StreamHeader(table, getSessionId(), first, files.values());
-        logger.info("Streaming to {}", getHost());
-        logger.debug("Files are {}", StringUtils.join(files.values(), ","));
-        MessagingService.instance().stream(header, getHost());
+        int maxIteration = Math.min(maxConcurrency, pendingFiles.size());
+        for (int i = 0; i < maxIteration; i++)
+        {
+            PendingFile pf = pendingFiles.poll();
+            files.put(pf.getFilename(), pf);
+            StreamHeader header = new StreamHeader(table, getSessionId(), pf, files.values());
+            logger.info("Streaming to {}", getHost());
+            logger.debug("Files are {}", StringUtils.join(files.values(), ","));
+            MessagingService.instance().stream(header, getHost());
+        }
     }
 }

@@ -49,13 +49,14 @@ public class BulkLoader
     private static final String INITIAL_HOST_ADDRESS_OPTION = "nodes";
     private static final String RPC_PORT_OPTION = "port";
     private static final String THROTTLE_MBITS = "throttle";
+    private static final String THREADS_OPTION = "threads";
 
     public static void main(String args[]) throws IOException
     {
         LoaderOptions options = LoaderOptions.parseArgs(args);
         try
         {
-            SSTableLoader loader = new SSTableLoader(options.directory, new ExternalClient(options, options.hosts, options.rpcPort), options);
+            SSTableLoader loader = new SSTableLoader(options.directory, new ExternalClient(options, options.hosts, options.rpcPort), options, options.threads);
             DatabaseDescriptor.setStreamThroughputOutboundMegabitsPerSec(options.throttle);
             SSTableLoader.LoaderFuture future = loader.stream(options.ignores);
 
@@ -254,6 +255,7 @@ public class BulkLoader
         public boolean noProgress;
         public int rpcPort = 9160;
         public int throttle = 0;
+        public int threads = 1;
 
         public Set<InetAddress> hosts = new HashSet<InetAddress>();
         public Set<InetAddress> ignores = new HashSet<InetAddress>();
@@ -306,6 +308,20 @@ public class BulkLoader
                 opts.debug = cmd.hasOption(DEBUG_OPTION);
                 opts.verbose = cmd.hasOption(VERBOSE_OPTION);
                 opts.noProgress = cmd.hasOption(NOPROGRESS_OPTION);
+                if (cmd.hasOption(THREADS_OPTION))
+                {
+                    String threadsOption = cmd.getOptionValue(THREADS_OPTION);
+                    try
+                    {
+                        int threads = Integer.parseInt(threadsOption);
+                        assert threads > 0 : "Number of threads must be > 0.";
+                        opts.threads = threads;
+                    }
+                    catch (NumberFormatException e)
+                    {
+                        errorMsg("Threads must be an integer greater than 0.", options);
+                    }
+                }
 
                 if (cmd.hasOption(THROTTLE_MBITS))
                     opts.throttle = Integer.valueOf(cmd.getOptionValue(THROTTLE_MBITS));
@@ -390,6 +406,7 @@ public class BulkLoader
             options.addOption("d",  INITIAL_HOST_ADDRESS_OPTION, "initial hosts", "try to connect to these hosts (comma separated) initially for ring information");
             options.addOption("p",  RPC_PORT_OPTION, "rpc port", "port used for rpc (default 9160)");
             options.addOption("t",  THROTTLE_MBITS, "throttle", "throttle speed in Mbits (default unlimited)");
+            options.addOption("n",  THREADS_OPTION, "threads", "number of maximum threads to use per destination (default 1)");
             return options;
         }
 

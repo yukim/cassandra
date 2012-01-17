@@ -57,12 +57,12 @@ public class StreamReplyVerbHandler implements IVerbHandler
                 case FILE_FINISHED:
                     logger.info("Successfully sent {} to {}", reply.file, message.getFrom());
                     session.validateCurrentFile(reply.file);
-                    session.startNext();
+                    session.finishAndStartNext(reply.file);
                     break;
                 case FILE_RETRY:
                     session.validateCurrentFile(reply.file);
                     logger.info("Need to re-stream file {} to {}", reply.file, message.getFrom());
-                    session.retry();
+                    session.retry(reply.file);
                     break;
                 case SESSION_FINISHED:
                     session.close(true);
