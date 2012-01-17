@@ -160,7 +160,7 @@ public class BulkLoader
 
             sb.append("[total: ").append(totalSize == 0 ? 100L : totalProgress * 100L / totalSize).append(" - ");
             sb.append(mbPerSec(deltaProgress, deltaTime)).append("MB/s");
-            sb.append(" (avg: ").append(mbPerSec(totalProgress, time - startTime)).append("MB/s)]");;
+            sb.append(" (avg: ").append(mbPerSec(totalProgress, time - startTime)).append("MB/s)]");
             System.out.print(sb.toString());
             return done;
         }

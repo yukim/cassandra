@@ -34,6 +34,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
@@ -79,6 +80,7 @@ public class SSTableLoader
             public boolean accept(File dir, String name)
             {
                 Pair<Descriptor, Component> p = SSTable.tryComponentFromFilename(dir, name);
+                outputHandler.output(dir + " " + name);
                 Descriptor desc = p == null ? null : p.left;
                 if (p == null || !p.right.equals(Component.DATA) || desc.temporary)
                     return false;
@@ -122,6 +124,8 @@ public class SSTableLoader
 
     public LoaderFuture stream(Set<InetAddress> toIgnore) throws IOException
     {
+        //MessagingService.instance().setStreamingThreadsPerNode(maxThreadsPerDestination);
+
         client.init(keyspace);
 
         Collection<SSTableReader> sstables = openSSTables();
@@ -132,7 +136,7 @@ public class SSTableLoader
         }
 
         Map<InetAddress, Collection<Range<Token>>> endpointToRanges = client.getEndpointToRangesMap();
-        outputHandler.output(String.format("Streaming revelant part of %sto %s", names(sstables), endpointToRanges.keySet()));
+        outputHandler.output(String.format("Streaming relevant part of %sto %s", names(sstables), endpointToRanges.keySet()));
 
         // There will be one streaming session by endpoint
         LoaderFuture future = new LoaderFuture(endpointToRanges.size());
