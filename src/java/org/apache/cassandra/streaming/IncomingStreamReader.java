@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.cassandra.streaming;
 
 import java.io.*;
@@ -64,6 +63,7 @@ public class IncomingStreamReader
         InetAddress host = header.broadcastAddress != null ? header.broadcastAddress
                            : ((InetSocketAddress)socket.getRemoteSocketAddress()).getAddress();
         session = StreamInSession.get(host, header.sessionId);
+        session.setSocket(socket);
 
         session.addFiles(header.pendingFiles);
         // set the current file we are streaming so progress shows up in jmx
@@ -87,11 +87,12 @@ public class IncomingStreamReader
             }
 
             assert remoteFile.estimatedKeys > 0;
+            SSTableReader reader = null;
             DataInputStream dis = new DataInputStream(new LZFInputStream(socket.getInputStream()));
             try
             {
-                session.addReader(streamIn(dis, localFile, remoteFile));
-                finished();
+                reader = streamIn(dis, localFile, remoteFile);
+                session.finished(remoteFile, reader);
             }
             catch (IOException ex)
             {
@@ -162,48 +163,13 @@ public class IncomingStreamReader
         }
     }
 
-    public void finished() throws IOException
+    private void retry() throws IOException
     {
-        if (logger.isDebugEnabled())
-            logger.debug("Finished {}. Sending ack to {}", remoteFile, this);
-        StreamReply reply = new StreamReply(remoteFile.getFilename(), session.getSessionId(), StreamReply.Status.FILE_FINISHED);
-        // send a StreamStatus message telling the source node it can delete this file
-        sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
-        logger.debug("ack {} sent for {}", reply, remoteFile);
-    }
-
-    public void retry() throws IOException
-    {
-        StreamReply reply = new StreamReply(remoteFile.getFilename(), session.getSessionId(), StreamReply.Status.FILE_RETRY);
-        logger.info("Streaming of file {} from {} failed: requesting a retry.", remoteFile, this);
-        sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
+        /* Ask the source node to re-stream this file. */
+        session.retry(remoteFile);
 
         /* Delete the orphaned file. */
         if (new File(localFile.getFilename()).isFile())
             FileUtils.deleteWithConfirm(new File(localFile.getFilename()));
-    }
-
-    public void sessionFinished() throws IOException
-    {
-        // send reply to source that we're done
-        StreamReply reply = new StreamReply("", session.getSessionId(), StreamReply.Status.SESSION_FINISHED);
-        logger.info("Finished streaming session {} from {}", session.getSessionId(), session.getHost());
-        try
-        {
-            if (socket != null)
-                sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
-            else
-                logger.debug("No socket to reply to {} with!", session.getHost());
-        }
-        finally
-        {
-            if (socket != null)
-                socket.close();
-        }
-    }
-
-    public void sendMessage(Message message) throws IOException
-    {
-        OutboundTcpConnection.write(message, String.valueOf(session.getSessionId()), new DataOutputStream(socket.getOutputStream()));
     }
 }

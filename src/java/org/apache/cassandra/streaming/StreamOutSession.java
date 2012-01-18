@@ -70,10 +70,11 @@ public class StreamOutSession extends AbstractStreamSession
         return streams.get(new Pair<InetAddress, Long>(host, sessionId));
     }
 
-    private final Map<String, PendingFile> files = new NonBlockingHashMap<String, PendingFile>();
+    // active pending files keyed by file name
+    private final Map<String, PendingFile> active = new NonBlockingHashMap<String, PendingFile>();
+    private final Queue<PendingFile> pending = new ConcurrentLinkedQueue<PendingFile>();
 
     private final int maxConcurrency;
-    private final Queue<PendingFile> pendingFiles = new ConcurrentLinkedQueue<PendingFile>();
 
     private StreamOutSession(String table, Pair<InetAddress, Long> context, IStreamCallback callback, int maxConcurrency)
     {
@@ -87,38 +88,37 @@ public class StreamOutSession extends AbstractStreamSession
         {
             if (logger.isDebugEnabled())
                 logger.debug("Adding file {} to be streamed.", pendingFile.getFilename());
-            this.pendingFiles.add(pendingFile);
-            files.put(pendingFile.getFilename(), pendingFile);
+            pending.add(pendingFile);
         }
     }
 
     public void retry(String file)
     {
-        assert files.containsKey(file);
-        streamFile(files.get(file));
+        assert active.containsKey(file);
+        streamFile(active.get(file));
     }
 
     private void streamFile(PendingFile pf)
     {
         if (logger.isDebugEnabled())
             logger.debug("Streaming {} ...", pf);
-        files.put(pf.getFilename(), pf);
+        active.put(pf.getFilename(), pf);
         MessagingService.instance().stream(new StreamHeader(table, getSessionId(), pf), getHost());
     }
 
     public void finishAndStartNext(String finished) throws IOException
     {
-        assert files.containsKey(finished);
-        files.get(finished).sstable.releaseReference();
-        files.remove(finished);
-        if (!pendingFiles.isEmpty())
-            streamFile(pendingFiles.poll());
+        assert active.containsKey(finished);
+        active.get(finished).sstable.releaseReference();
+        active.remove(finished);
+        if (!pending.isEmpty())
+            streamFile(pending.poll());
     }
 
     protected void closeInternal(boolean success)
     {
         // Release reference on last file (or any uncompleted ones)
-        for (PendingFile file : files.values())
+        for (PendingFile file : active.values())
             file.sstable.releaseReference();
         streams.remove(context);
     }
@@ -132,16 +132,16 @@ public class StreamOutSession extends AbstractStreamSession
 
     public Collection<PendingFile> getFiles()
     {
-        return files.values();
+        Set<PendingFile> files = new HashSet<PendingFile>(pending);
+        files.addAll(active.values());
+        return files;
     }
 
     public static Set<InetAddress> getDestinations()
     {
         Set<InetAddress> hosts = new HashSet<InetAddress>();
         for (StreamOutSession session : streams.values())
-        {
             hosts.add(session.getHost());
-        }
         return hosts;
     }
 
@@ -158,8 +158,8 @@ public class StreamOutSession extends AbstractStreamSession
 
     public void validateCurrentFile(String file)
     {
-        if (!files.containsKey(file))
-            throw new IllegalStateException(String.format("target reported current file %s is not in %s", file, files.keySet()));
+        if (!active.containsKey(file))
+            throw new IllegalStateException(String.format("target reported current file %s is not in %s", file, active.keySet()));
     }
 
     /**
@@ -168,15 +168,18 @@ public class StreamOutSession extends AbstractStreamSession
      */
     public void begin()
     {
-        int maxIteration = Math.min(maxConcurrency, pendingFiles.size());
-        for (int i = 0; i < maxIteration; i++)
-        {
-            PendingFile pf = pendingFiles.poll();
-            files.put(pf.getFilename(), pf);
-            StreamHeader header = new StreamHeader(table, getSessionId(), pf, files.values());
-            logger.info("Streaming to {}", getHost());
-            logger.debug("Files are {}", StringUtils.join(files.values(), ","));
-            MessagingService.instance().stream(header, getHost());
-        }
+        logger.info("Streaming to {}", getHost());
+        logger.debug("Files are {}", StringUtils.join(active.values(), ","));
+
+        // send first streaming with all pending files
+        PendingFile pf = pending.poll();
+        active.put(pf.getFilename(), pf);
+        StreamHeader header = new StreamHeader(table, getSessionId(), pf, pending);
+        MessagingService.instance().stream(header, getHost());
+
+        // and streams rest til hit max concurrency
+        int maxIteration = Math.min(maxConcurrency, pending.size());
+        for (int i = 1; i < maxIteration; i++)
+            streamFile(pending.poll());
     }
 }

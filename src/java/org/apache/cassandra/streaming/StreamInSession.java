@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.cassandra.streaming;
 
 import java.io.DataOutputStream;
@@ -89,6 +88,11 @@ public class StreamInSession extends AbstractStreamSession
         this.table = table;
     }
 
+    public void setSocket(Socket socket)
+    {
+        this.socket = socket;
+    }
+
     public void addFiles(Collection<PendingFile> files)
     {
         for (PendingFile file : files)
@@ -99,10 +103,20 @@ public class StreamInSession extends AbstractStreamSession
         }
     }
 
-    public void addReader(SSTableReader reader)
+    public void finished(PendingFile remoteFile, SSTableReader reader) throws IOException
     {
+        if (logger.isDebugEnabled())
+            logger.debug("Finished {} (from {}). Sending ack to {}", new Object[] {remoteFile, getHost(), this});
+
         assert reader != null;
         readers.add(reader);
+        files.remove(remoteFile);
+        if (currentFiles.contains(remoteFile))
+            currentFiles.remove(remoteFile);
+        StreamReply reply = new StreamReply(remoteFile.getFilename(), getSessionId(), StreamReply.Status.FILE_FINISHED);
+        // send a StreamStatus message telling the source node it can delete this file
+        sendMessage(reply.getMessage(Gossiper.instance.getVersion(getHost())));
+        logger.debug("ack {} sent for {}", reply, remoteFile);
     }
 
     public void retry(PendingFile remoteFile) throws IOException
@@ -192,9 +206,6 @@ public class StreamInSession extends AbstractStreamSession
                 if (socket != null)
                     socket.close();
             }
-
-            if (stream != null)
-                stream.sessionFinished();
 
             close(true);
         }
