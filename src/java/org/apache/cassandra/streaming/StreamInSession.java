@@ -26,7 +26,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.OutboundTcpConnection;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
@@ -36,8 +38,6 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.net.Message;
-import org.apache.cassandra.net.OutboundTcpConnection;
 import org.apache.cassandra.utils.Pair;
 
 /** each context gets its own StreamInSession. So there may be >1 Session per host */
@@ -49,7 +49,7 @@ public class StreamInSession extends AbstractStreamSession
 
     private final Set<PendingFile> files = new NonBlockingHashSet<PendingFile>();
     private final List<SSTableReader> readers = new ArrayList<SSTableReader>();
-    private PendingFile current;
+    private Set<PendingFile> currentFiles = new NonBlockingHashSet<PendingFile>();
     private Socket socket;
     private volatile int retries;
 
@@ -79,9 +79,9 @@ public class StreamInSession extends AbstractStreamSession
         return session;
     }
 
-    public void setCurrentFile(PendingFile file)
+    public void addCurrentFile(PendingFile file)
     {
-        this.current = file;
+        currentFiles.add(file);
     }
 
     public void setTable(String table)
@@ -89,35 +89,20 @@ public class StreamInSession extends AbstractStreamSession
         this.table = table;
     }
 
-    public void setSocket(Socket socket)
-    {
-        this.socket = socket;
-    }
-
     public void addFiles(Collection<PendingFile> files)
     {
         for (PendingFile file : files)
         {
-            if(logger.isDebugEnabled())
+            if (logger.isDebugEnabled())
                 logger.debug("Adding file {} to Stream Request queue", file.getFilename());
             this.files.add(file);
         }
     }
 
-    public void finished(PendingFile remoteFile, SSTableReader reader) throws IOException
+    public void addReader(SSTableReader reader)
     {
-        if (logger.isDebugEnabled())
-            logger.debug("Finished {} (from {}). Sending ack to {}", new Object[] {remoteFile, getHost(), this});
-
         assert reader != null;
         readers.add(reader);
-        files.remove(remoteFile);
-        if (remoteFile.equals(current))
-            current = null;
-        StreamReply reply = new StreamReply(remoteFile.getFilename(), getSessionId(), StreamReply.Status.FILE_FINISHED);
-        // send a StreamStatus message telling the source node it can delete this file
-        sendMessage(reply.getMessage(Gossiper.instance.getVersion(getHost())));
-        logger.debug("ack {} sent for {}", reply, remoteFile);
     }
 
     public void retry(PendingFile remoteFile) throws IOException
@@ -125,7 +110,7 @@ public class StreamInSession extends AbstractStreamSession
         retries++;
         if (retries > DatabaseDescriptor.getMaxStreamingRetries())
         {
-            logger.error(String.format("Failed streaming session %d from %s while receiving %s", getSessionId(), getHost().toString(), current),
+            logger.error(String.format("Failed streaming session %d from %s while receiving %s", getSessionId(), getHost().toString(), currentFiles),
                          new IllegalStateException("Too many retries for " + remoteFile));
             close(false);
             return;
@@ -148,11 +133,17 @@ public class StreamInSession extends AbstractStreamSession
         OutboundTcpConnection.write(message, String.valueOf(getSessionId()), new DataOutputStream(socket.getOutputStream()));
     }
 
-    public void closeIfFinished() throws IOException
+    public void closeIfFinished(IncomingStreamReader stream) throws IOException
     {
+        if (stream != null)
+        {
+            files.remove(stream.remoteFile);
+            currentFiles.remove(stream.remoteFile);
+        }
+
         if (files.isEmpty())
         {
-            HashMap <ColumnFamilyStore, List<SSTableReader>> cfstores = new HashMap<ColumnFamilyStore, List<SSTableReader>>();
+            HashMap<ColumnFamilyStore, List<SSTableReader>> cfstores = new HashMap<ColumnFamilyStore, List<SSTableReader>>();
             try
             {
                 for (SSTableReader sstable : readers)
@@ -202,6 +193,9 @@ public class StreamInSession extends AbstractStreamSession
                     socket.close();
             }
 
+            if (stream != null)
+                stream.sessionFinished();
+
             close(true);
         }
     }
@@ -243,8 +237,8 @@ public class StreamInSession extends AbstractStreamSession
             if (entry.getKey().left.equals(host))
             {
                 StreamInSession session = entry.getValue();
-                if (session.current != null)
-                    set.add(session.current);
+                if (!session.currentFiles.isEmpty())
+                    set.addAll(session.currentFiles);
                 set.addAll(session.files);
             }
         }
