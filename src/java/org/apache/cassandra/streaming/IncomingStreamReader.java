@@ -31,9 +31,12 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.compaction.CompactionController;
 import org.apache.cassandra.db.compaction.PrecompactedRow;
+import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.net.Message;
+import org.apache.cassandra.net.OutboundTcpConnection;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.BytesReadTracker;
@@ -61,11 +64,10 @@ public class IncomingStreamReader
         InetAddress host = header.broadcastAddress != null ? header.broadcastAddress
                            : ((InetSocketAddress)socket.getRemoteSocketAddress()).getAddress();
         session = StreamInSession.get(host, header.sessionId);
-        session.setSocket(socket);
 
         session.addFiles(header.pendingFiles);
         // set the current file we are streaming so progress shows up in jmx
-        session.setCurrentFile(header.file);
+        session.addCurrentFile(header.file);
         session.setTable(header.table);
         // pendingFile gets the new context for the local node.
         remoteFile = header.file;
@@ -85,13 +87,11 @@ public class IncomingStreamReader
             }
 
             assert remoteFile.estimatedKeys > 0;
-            SSTableReader reader = null;
-            logger.debug("Estimated keys {}", remoteFile.estimatedKeys);
             DataInputStream dis = new DataInputStream(new LZFInputStream(socket.getInputStream()));
             try
             {
-                reader = streamIn(dis, localFile, remoteFile);
-                session.finished(remoteFile, reader);
+                session.addReader(streamIn(dis, localFile, remoteFile));
+                finished();
             }
             catch (IOException ex)
             {
@@ -100,7 +100,7 @@ public class IncomingStreamReader
             }
         }
 
-        session.closeIfFinished();
+        session.closeIfFinished(this);
     }
 
     private SSTableReader streamIn(DataInput input, PendingFile localFile, PendingFile remoteFile) throws IOException
@@ -162,13 +162,48 @@ public class IncomingStreamReader
         }
     }
 
-    private void retry() throws IOException
+    public void finished() throws IOException
     {
-        /* Ask the source node to re-stream this file. */
-        session.retry(remoteFile);
+        if (logger.isDebugEnabled())
+            logger.debug("Finished {}. Sending ack to {}", remoteFile, this);
+        StreamReply reply = new StreamReply(remoteFile.getFilename(), session.getSessionId(), StreamReply.Status.FILE_FINISHED);
+        // send a StreamStatus message telling the source node it can delete this file
+        sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
+        logger.debug("ack {} sent for {}", reply, remoteFile);
+    }
+
+    public void retry() throws IOException
+    {
+        StreamReply reply = new StreamReply(remoteFile.getFilename(), session.getSessionId(), StreamReply.Status.FILE_RETRY);
+        logger.info("Streaming of file {} from {} failed: requesting a retry.", remoteFile, this);
+        sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
 
         /* Delete the orphaned file. */
         if (new File(localFile.getFilename()).isFile())
             FileUtils.deleteWithConfirm(new File(localFile.getFilename()));
+    }
+
+    public void sessionFinished() throws IOException
+    {
+        // send reply to source that we're done
+        StreamReply reply = new StreamReply("", session.getSessionId(), StreamReply.Status.SESSION_FINISHED);
+        logger.info("Finished streaming session {} from {}", session.getSessionId(), session.getHost());
+        try
+        {
+            if (socket != null)
+                sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
+            else
+                logger.debug("No socket to reply to {} with!", session.getHost());
+        }
+        finally
+        {
+            if (socket != null)
+                socket.close();
+        }
+    }
+
+    public void sendMessage(Message message) throws IOException
+    {
+        OutboundTcpConnection.write(message, String.valueOf(session.getSessionId()), new DataOutputStream(socket.getOutputStream()));
     }
 }
