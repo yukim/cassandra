@@ -114,11 +114,11 @@ public final class MessagingService implements MessagingServiceMBean
      * drop internal messages like bootstrap or repair notifications.
      */
     public static final EnumSet<StorageService.Verb> DROPPABLE_VERBS = EnumSet.of(StorageService.Verb.BINARY,
-            StorageService.Verb.MUTATION,
-            StorageService.Verb.READ_REPAIR,
-            StorageService.Verb.READ,
-            StorageService.Verb.RANGE_SLICE,
-            StorageService.Verb.REQUEST_RESPONSE);
+                                                                                  StorageService.Verb.MUTATION,
+                                                                                  StorageService.Verb.READ_REPAIR,
+                                                                                  StorageService.Verb.READ,
+                                                                                  StorageService.Verb.RANGE_SLICE,
+                                                                                  StorageService.Verb.REQUEST_RESPONSE);
 
     // total dropped message counts for server lifetime
     private final Map<StorageService.Verb, AtomicInteger> droppedMessages = new EnumMap<StorageService.Verb, AtomicInteger>(StorageService.Verb.class);

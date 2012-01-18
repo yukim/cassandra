@@ -80,7 +80,6 @@ public class SSTableLoader
             public boolean accept(File dir, String name)
             {
                 Pair<Descriptor, Component> p = SSTable.tryComponentFromFilename(dir, name);
-                outputHandler.output(dir + " " + name);
                 Descriptor desc = p == null ? null : p.left;
                 if (p == null || !p.right.equals(Component.DATA) || desc.temporary)
                     return false;
@@ -124,9 +123,8 @@ public class SSTableLoader
 
     public LoaderFuture stream(Set<InetAddress> toIgnore) throws IOException
     {
-        //MessagingService.instance().setStreamingThreadsPerNode(maxThreadsPerDestination);
-
         client.init(keyspace);
+        MessagingService.instance().setStreamingThreadsPerNode(maxThreadsPerDestination);
 
         Collection<SSTableReader> sstables = openSSTables();
         if (sstables.isEmpty())
