@@ -65,6 +65,8 @@ public class StreamReplyVerbHandler implements IVerbHandler
                     session.retry(reply.file);
                     break;
                 case SESSION_FINISHED:
+                    assert session.getFiles().size() == 0;
+                    logger.info("Finished streaming session to {}", message.getFrom());
                     session.close(true);
                     break;
                 case SESSION_FAILURE:

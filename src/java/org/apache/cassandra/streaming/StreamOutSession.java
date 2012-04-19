@@ -169,10 +169,12 @@ public class StreamOutSession extends AbstractStreamSession
     public void begin()
     {
         logger.info("Streaming to {}", getHost());
-        logger.debug("Files are {}", StringUtils.join(active.values(), ","));
+        //logger.debug("Files are {}", StringUtils.join(active.values(), ","));
 
         // send first streaming with all pending files
         PendingFile pf = pending.poll();
+        if (logger.isDebugEnabled())
+            logger.debug("Streaming {} ...", pf);
         active.put(pf.getFilename(), pf);
         StreamHeader header = new StreamHeader(table, getSessionId(), pf, pending);
         MessagingService.instance().stream(header, getHost());

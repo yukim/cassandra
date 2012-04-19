@@ -55,6 +55,7 @@ public class IncomingStreamReader
     protected final PendingFile remoteFile;
     protected final StreamInSession session;
     private final Socket socket;
+    private volatile int retries;
 
     public IncomingStreamReader(StreamHeader header, Socket socket) throws IOException
     {
@@ -63,7 +64,6 @@ public class IncomingStreamReader
         InetAddress host = header.broadcastAddress != null ? header.broadcastAddress
                            : ((InetSocketAddress)socket.getRemoteSocketAddress()).getAddress();
         session = StreamInSession.get(host, header.sessionId);
-        session.setSocket(socket);
 
         session.addFiles(header.pendingFiles);
         // set the current file we are streaming so progress shows up in jmx
@@ -92,7 +92,7 @@ public class IncomingStreamReader
             try
             {
                 reader = streamIn(dis, localFile, remoteFile);
-                session.finished(remoteFile, reader);
+                finished(reader);
             }
             catch (IOException ex)
             {
@@ -163,13 +163,45 @@ public class IncomingStreamReader
         }
     }
 
-    private void retry() throws IOException
+    public void finished(SSTableReader reader) throws IOException
     {
-        /* Ask the source node to re-stream this file. */
-        session.retry(remoteFile);
+        logger.debug("Finished {} (from {}). Sending ack...", remoteFile, session.getHost());
+        session.addSSTable(reader);
+        StreamReply reply = new StreamReply(remoteFile.getFilename(), session.getSessionId(), StreamReply.Status.FILE_FINISHED);
+        // send a StreamStatus message telling the source node it can delete this file
+        sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
+        logger.debug("ack {} sent for {}", reply, remoteFile);
+    }
+
+    public void retry() throws IOException
+    {
+        retries++;
+        if (retries > DatabaseDescriptor.getMaxStreamingRetries())
+        {
+            logger.error(String.format("Failed streaming session %d from %s while receiving %s", session.getSessionId(), session.getHost().toString(), remoteFile),
+                                new IllegalStateException("Too many retries for " + remoteFile));
+            session.close(false);
+            return;
+        }
+        StreamReply reply = new StreamReply(remoteFile.getFilename(), session.getSessionId(), StreamReply.Status.FILE_RETRY);
+        logger.info("Streaming of file {} for {} failed: requesting a retry.", remoteFile, this);
+        try
+        {
+            sendMessage(reply.getMessage(Gossiper.instance.getVersion(session.getHost())));
+        }
+        catch (IOException e)
+        {
+            logger.error("Sending retry message failed, closing session.", e);
+            session.close(false);
+        }
 
         /* Delete the orphaned file. */
         if (new File(localFile.getFilename()).isFile())
             FileUtils.deleteWithConfirm(new File(localFile.getFilename()));
+    }
+
+    public void sendMessage(Message message) throws IOException
+    {
+        OutboundTcpConnection.write(message, String.valueOf(session.getSessionId()), new DataOutputStream(socket.getOutputStream()));
     }
 }

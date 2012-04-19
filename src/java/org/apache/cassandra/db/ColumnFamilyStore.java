@@ -880,10 +880,14 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public void addSSTable(SSTableReader sstable)
     {
         assert sstable.getColumnFamilyName().equals(columnFamily);
-        data.addSSTables(Arrays.asList(sstable));
-        CompactionManager.instance.submitBackground(this);
+        addSSTable(Arrays.asList(sstable));
     }
 
+    public void addSSTable(Collection<SSTableReader> sstables)
+    {
+        data.addSSTables(sstables);
+        CompactionManager.instance.submitBackground(this);
+    }
     /*
      * Add up all the files sizes this is the worst case file
      * size for compaction of all the list of files given.
