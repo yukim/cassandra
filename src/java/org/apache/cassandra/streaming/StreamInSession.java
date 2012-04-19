@@ -17,17 +17,11 @@
  */
 package org.apache.cassandra.streaming;
 
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.net.Message;
-import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.OutboundTcpConnection;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
@@ -37,6 +31,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Pair;
 
 /** each context gets its own StreamInSession. So there may be >1 Session per host */
@@ -49,8 +44,6 @@ public class StreamInSession extends AbstractStreamSession
     private final Set<PendingFile> files = new NonBlockingHashSet<PendingFile>();
     private final List<SSTableReader> readers = new ArrayList<SSTableReader>();
     private Set<PendingFile> currentFiles = new NonBlockingHashSet<PendingFile>();
-    private Socket socket;
-    private volatile int retries;
 
     private StreamInSession(Pair<InetAddress, Long> context, IStreamCallback callback)
     {
@@ -88,11 +81,6 @@ public class StreamInSession extends AbstractStreamSession
         this.table = table;
     }
 
-    public void setSocket(Socket socket)
-    {
-        this.socket = socket;
-    }
-
     public void addFiles(Collection<PendingFile> files)
     {
         for (PendingFile file : files)
@@ -103,48 +91,10 @@ public class StreamInSession extends AbstractStreamSession
         }
     }
 
-    public void finished(PendingFile remoteFile, SSTableReader reader) throws IOException
+    public void addSSTable(SSTableReader reader) throws IOException
     {
-        if (logger.isDebugEnabled())
-            logger.debug("Finished {} (from {}). Sending ack to {}", new Object[] {remoteFile, getHost(), this});
-
         assert reader != null;
         readers.add(reader);
-        files.remove(remoteFile);
-        if (currentFiles.contains(remoteFile))
-            currentFiles.remove(remoteFile);
-        StreamReply reply = new StreamReply(remoteFile.getFilename(), getSessionId(), StreamReply.Status.FILE_FINISHED);
-        // send a StreamStatus message telling the source node it can delete this file
-        sendMessage(reply.getMessage(Gossiper.instance.getVersion(getHost())));
-        logger.debug("ack {} sent for {}", reply, remoteFile);
-    }
-
-    public void retry(PendingFile remoteFile) throws IOException
-    {
-        retries++;
-        if (retries > DatabaseDescriptor.getMaxStreamingRetries())
-        {
-            logger.error(String.format("Failed streaming session %d from %s while receiving %s", getSessionId(), getHost().toString(), currentFiles),
-                         new IllegalStateException("Too many retries for " + remoteFile));
-            close(false);
-            return;
-        }
-        StreamReply reply = new StreamReply(remoteFile.getFilename(), getSessionId(), StreamReply.Status.FILE_RETRY);
-        logger.info("Streaming of file {} for {} failed: requesting a retry.", remoteFile, this);
-        try
-        {
-            sendMessage(reply.getMessage(Gossiper.instance.getVersion(getHost())));
-        }
-        catch (IOException e)
-        {
-            logger.error("Sending retry message failed, closing session.", e);
-            close(false);
-        }
-    }
-
-    public void sendMessage(Message message) throws IOException
-    {
-        OutboundTcpConnection.write(message, String.valueOf(getSessionId()), new DataOutputStream(socket.getOutputStream()));
     }
 
     public void closeIfFinished(IncomingStreamReader stream) throws IOException
@@ -160,6 +110,7 @@ public class StreamInSession extends AbstractStreamSession
             HashMap<ColumnFamilyStore, List<SSTableReader>> cfstores = new HashMap<ColumnFamilyStore, List<SSTableReader>>();
             try
             {
+                // sort sstables by cf
                 for (SSTableReader sstable : readers)
                 {
                     assert sstable.getTableName().equals(table);
@@ -192,20 +143,9 @@ public class StreamInSession extends AbstractStreamSession
             }
 
             // send reply to source that we're done
-            StreamReply reply = new StreamReply("", getSessionId(), StreamReply.Status.SESSION_FINISHED);
             logger.info("Finished streaming session {} from {}", getSessionId(), getHost());
-            try
-            {
-                if (socket != null)
-                    OutboundTcpConnection.write(reply.getMessage(Gossiper.instance.getVersion(getHost())), context.right.toString(), new DataOutputStream(socket.getOutputStream()));
-                else
-                    logger.debug("No socket to reply to {} with!", getHost());
-            }
-            finally
-            {
-                if (socket != null)
-                    socket.close();
-            }
+            StreamReply reply = new StreamReply("", getSessionId(), StreamReply.Status.SESSION_FINISHED);
+            stream.sendMessage(reply.getMessage(Gossiper.instance.getVersion(getHost())));
 
             close(true);
         }

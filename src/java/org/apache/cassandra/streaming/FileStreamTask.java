@@ -110,6 +110,7 @@ public class FileStreamTask extends WrappedRunnable
             StreamOutSession session = StreamOutSession.get(to, header.sessionId);
             if (session != null)
                 session.close(false);
+            logger.error("streaming " + header.file + " failed. closing session.", e);
             throw e;
         }
         finally
@@ -175,7 +176,7 @@ public class FileStreamTask extends WrappedRunnable
                 compressedoutput.flush();
 
                 if (logger.isDebugEnabled())
-                    logger.debug("Bytes transferred " + bytesTransferred + "/" + header.file.size);
+                    logger.debug("Bytes transferred " + bytesTransferred + "/" + header.file.size + " for file " + header.file.getFilename());
             }
             // receive reply confirmation
             receiveReply();
