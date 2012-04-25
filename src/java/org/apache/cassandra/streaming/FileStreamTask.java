@@ -110,8 +110,7 @@ public class FileStreamTask extends WrappedRunnable
             StreamOutSession session = StreamOutSession.get(to, header.sessionId);
             if (session != null)
                 session.close(false);
-            logger.error("streaming " + header.file + " failed. closing session.", e);
-            throw e;
+            throw new IOException("streaming " + header.file + " failed. closing session.", e);
         }
         finally
         {

@@ -889,11 +889,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         CompactionManager.instance.submitBackground(this);
     }
 
-    public void addSSTable(Collection<SSTableReader> sstables)
-    {
-        data.addSSTables(sstables);
-        CompactionManager.instance.submitBackground(this);
-    }
     /*
      * Add up all the files sizes this is the worst case file
      * size for compaction of all the list of files given.

@@ -98,7 +98,7 @@ public final class MessagingService implements MessagingServiceMBean
      */
     private final ConcurrentMap<InetAddress, DebuggableThreadPoolExecutor> streamExecutors = new NonBlockingHashMap<InetAddress, DebuggableThreadPoolExecutor>();
     private final AtomicInteger activeStreamsOutbound = new AtomicInteger(0);
-    private final AtomicInteger streamingThreadsPerNode = new AtomicInteger(1);
+    private final AtomicInteger streamExecutorCoreSize = new AtomicInteger(0);
 
     private final NonBlockingHashMap<InetAddress, OutboundTcpConnectionPool> connectionManagers_ = new NonBlockingHashMap<InetAddress, OutboundTcpConnectionPool>();
 
@@ -476,7 +476,7 @@ public final class MessagingService implements MessagingServiceMBean
         {
             // Using a core pool size of 0 is important. See documentation of streamExecutors.
             executor = new DebuggableThreadPoolExecutor(0,
-                                                        1,
+                                                        Integer.MAX_VALUE,
                                                         1,
                                                         TimeUnit.SECONDS,
                                                         new LinkedBlockingQueue<Runnable>(),
@@ -488,14 +488,16 @@ public final class MessagingService implements MessagingServiceMBean
                 executor = old;
             }
         }
-        executor.setCorePoolSize(streamingThreadsPerNode.get());
+        executor.setCorePoolSize(streamExecutorCoreSize.get());
 
         executor.execute(new FileStreamTask(header, to));
     }
 
     public void setStreamingThreadsPerNode(int threads)
     {
-        streamingThreadsPerNode.getAndSet(threads);
+        // we want to keep core size of 0 when we only need just one thread
+        if (threads > 1)
+            streamExecutorCoreSize.getAndSet(threads);
     }
             
     public void incrementActiveStreamsOutbound()

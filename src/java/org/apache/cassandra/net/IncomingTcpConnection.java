@@ -44,7 +44,7 @@ public class IncomingTcpConnection extends Thread
 
     public IncomingTcpConnection(Socket socket)
     {
-        super("READ-" + socket.getRemoteSocketAddress());
+        assert socket != null;
         this.socket = socket;
     }
 
@@ -179,7 +179,6 @@ public class IncomingTcpConnection extends Thread
 
     private void stream(StreamHeader streamHeader, DataInputStream input) throws IOException
     {
-        setName("streaming from " + socket.getRemoteSocketAddress());
         new IncomingStreamReader(streamHeader, socket).read();
     }
 }

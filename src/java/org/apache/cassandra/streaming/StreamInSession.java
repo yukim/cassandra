@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import org.slf4j.Logger;
@@ -29,9 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Table;
-import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Pair;
 
 /** each context gets its own StreamInSession. So there may be >1 Session per host */
@@ -43,7 +42,8 @@ public class StreamInSession extends AbstractStreamSession
 
     private final Set<PendingFile> files = new NonBlockingHashSet<PendingFile>();
     private final List<SSTableReader> readers = new ArrayList<SSTableReader>();
-    private Set<PendingFile> currentFiles = new NonBlockingHashSet<PendingFile>();
+    private volatile int retries;
+    private volatile boolean isFinished = false;
 
     private StreamInSession(Pair<InetAddress, Long> context, IStreamCallback callback)
     {
@@ -71,9 +71,11 @@ public class StreamInSession extends AbstractStreamSession
         return session;
     }
 
-    public void addCurrentFile(PendingFile file)
+    public void setCurrentFile(PendingFile file)
     {
-        currentFiles.add(file);
+        // replace pending file with currently streaming file
+        files.remove(file);
+        files.add(file);
     }
 
     public void setTable(String table)
@@ -97,75 +99,77 @@ public class StreamInSession extends AbstractStreamSession
         readers.add(reader);
     }
 
-    public void closeIfFinished(IncomingStreamReader stream) throws IOException
+    /**
+     * @return true if stream can retry
+     */
+    public boolean maybeRetry()
+    {
+        retries++;
+        return retries <= DatabaseDescriptor.getMaxStreamingRetries();
+    }
+
+    /**
+     * Close this StreamInSession when all files are transferred successfully.
+     *
+     * @param stream finished IncomingStreamReader
+     * @return true if session is finished and closed
+     * @throws IOException
+     */
+    public boolean closeIfFinished(IncomingStreamReader stream) throws IOException
     {
         if (stream != null)
         {
             files.remove(stream.remoteFile);
-            currentFiles.remove(stream.remoteFile);
-        }
 
-        if (files.isEmpty())
-        {
-            HashMap<ColumnFamilyStore, List<SSTableReader>> cfstores = new HashMap<ColumnFamilyStore, List<SSTableReader>>();
-            try
+            if (files.isEmpty() && !isFinished)
             {
-                // sort sstables by cf
-                for (SSTableReader sstable : readers)
+                isFinished = true;
+                HashMap<ColumnFamilyStore, List<SSTableReader>> cfstores = new HashMap<ColumnFamilyStore, List<SSTableReader>>();
+                try
                 {
-                    assert sstable.getTableName().equals(table);
-
-                    // Acquire the reference (for secondary index building) before submitting the index build,
-                    // so it can't get compacted out of existence in between
-                    if (!sstable.acquireReference())
-                        throw new AssertionError("We shouldn't fail acquiring a reference on a sstable that has just been transferred");
-
-                    ColumnFamilyStore cfs = Table.open(sstable.getTableName()).getColumnFamilyStore(sstable.getColumnFamilyName());
-                    if (!cfstores.containsKey(cfs))
-                        cfstores.put(cfs, new ArrayList<SSTableReader>());
-                    cfstores.get(cfs).add(sstable);
-                }
-
-                // add sstables and build secondary indexes
-                for (Map.Entry<ColumnFamilyStore, List<SSTableReader>> entry : cfstores.entrySet())
-                {
-                    if (entry.getKey() != null)
+                    // sort sstables by cf
+                    for (SSTableReader sstable : readers)
                     {
-                        entry.getKey().addSSTables(entry.getValue());
-                        entry.getKey().indexManager.maybeBuildSecondaryIndexes(entry.getValue(), entry.getKey().indexManager.getIndexedColumns());
+                        assert sstable.getTableName().equals(table);
+
+                        // Acquire the reference (for secondary index building) before submitting the index build,
+                        // so it can't get compacted out of existence in between
+                        if (!sstable.acquireReference())
+                            throw new AssertionError("We shouldn't fail acquiring a reference on a sstable that has just been transferred");
+
+                        ColumnFamilyStore cfs = Table.open(sstable.getTableName()).getColumnFamilyStore(sstable.getColumnFamilyName());
+                        if (!cfstores.containsKey(cfs))
+                            cfstores.put(cfs, new ArrayList<SSTableReader>());
+                        cfstores.get(cfs).add(sstable);
+                    }
+
+                    // add sstables and build secondary indexes
+                    for (Map.Entry<ColumnFamilyStore, List<SSTableReader>> entry : cfstores.entrySet())
+                    {
+                        if (entry.getKey() != null)
+                        {
+                            entry.getKey().addSSTables(entry.getValue());
+                            entry.getKey().indexManager.maybeBuildSecondaryIndexes(entry.getValue(), entry.getKey().indexManager.getIndexedColumns());
+                        }
                     }
                 }
-            }
-            finally
-            {
-                for (List<SSTableReader> referenced : cfstores.values())
-                    SSTableReader.releaseReferences(referenced);
-            }
+                finally
+                {
+                    for (List<SSTableReader> referenced : cfstores.values())
+                        SSTableReader.releaseReferences(referenced);
+                }
 
-            // send reply to source that we're done
-            logger.info("Finished streaming session {} from {}", getSessionId(), getHost());
-            StreamReply reply = new StreamReply("", getSessionId(), StreamReply.Status.SESSION_FINISHED);
-            stream.sendMessage(reply.getMessage(Gossiper.instance.getVersion(getHost())));
+                close(true);
 
-            close(true);
+                return true;
+            }
         }
+        return false;
     }
 
     protected void closeInternal(boolean success)
     {
         sessions.remove(context);
-        if (!success && FailureDetector.instance.isAlive(getHost()))
-        {
-            try
-            {
-                StreamReply reply = new StreamReply("", getSessionId(), StreamReply.Status.SESSION_FAILURE);
-                MessagingService.instance().sendOneWay(reply.getMessage(Gossiper.instance.getVersion(getHost())), getHost());
-            }
-            catch (IOException ex)
-            {
-                logger.error("Error sending streaming session failure notification to " + getHost(), ex);
-            }
-        }
     }
 
     /** query method to determine which hosts are streaming to this node. */
@@ -188,8 +192,6 @@ public class StreamInSession extends AbstractStreamSession
             if (entry.getKey().left.equals(host))
             {
                 StreamInSession session = entry.getValue();
-                if (!session.currentFiles.isEmpty())
-                    set.addAll(session.currentFiles);
                 set.addAll(session.files);
             }
         }

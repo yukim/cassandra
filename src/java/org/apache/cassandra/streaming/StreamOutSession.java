@@ -86,8 +86,7 @@ public class StreamOutSession extends AbstractStreamSession
     {
         for (PendingFile pendingFile : pendingFiles)
         {
-            if (logger.isDebugEnabled())
-                logger.debug("Adding file {} to be streamed.", pendingFile.getFilename());
+            logger.debug("Adding file {} to be streamed.", pendingFile.getFilename());
             pending.add(pendingFile);
         }
     }
@@ -100,8 +99,7 @@ public class StreamOutSession extends AbstractStreamSession
 
     private void streamFile(PendingFile pf)
     {
-        if (logger.isDebugEnabled())
-            logger.debug("Streaming {} ...", pf);
+        logger.debug("Streaming {} ...", pf);
         active.put(pf.getFilename(), pf);
         MessagingService.instance().stream(new StreamHeader(table, getSessionId(), pf), getHost());
     }
@@ -169,19 +167,20 @@ public class StreamOutSession extends AbstractStreamSession
     public void begin()
     {
         logger.info("Streaming to {}", getHost());
-        //logger.debug("Files are {}", StringUtils.join(active.values(), ","));
 
         // send first streaming with all pending files
         PendingFile pf = pending.poll();
-        if (logger.isDebugEnabled())
+        if (pf != null)
+        {
             logger.debug("Streaming {} ...", pf);
-        active.put(pf.getFilename(), pf);
-        StreamHeader header = new StreamHeader(table, getSessionId(), pf, pending);
-        MessagingService.instance().stream(header, getHost());
+            active.put(pf.getFilename(), pf);
+            StreamHeader header = new StreamHeader(table, getSessionId(), pf, pending);
+            MessagingService.instance().stream(header, getHost());
 
-        // and streams rest til hit max concurrency
-        int maxIteration = Math.min(maxConcurrency, pending.size());
-        for (int i = 1; i < maxIteration; i++)
-            streamFile(pending.poll());
+            // and streams rest til hit max concurrency
+            int maxIteration = Math.min(maxConcurrency, pending.size());
+            for (int i = 1; i < maxIteration; i++)
+                streamFile(pending.poll());
+        }
     }
 }
