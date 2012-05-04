@@ -326,11 +326,17 @@ public final class CFMetaData
 
     public static CFMetaData newIndexMetadata(CFMetaData parent, ColumnDefinition info, AbstractType<?> columnComparator)
     {
+        // Depends on parent's cache setting, turn on its index CF's cache.
+        // Here, only key cache is enabled, but later row cache will be turned on depending on cardinality.
+        Caching indexCaching = Caching.NONE;
+        if (parent.getCaching() == Caching.ALL || parent.getCaching() == Caching.KEYS_ONLY)
+            indexCaching = Caching.KEYS_ONLY;
+
         return new CFMetaData(parent.ksName, parent.indexColumnFamilyName(info), ColumnFamilyType.Standard, columnComparator, null)
                              .keyValidator(info.getValidator())
                              .readRepairChance(0.0)
                              .dcLocalReadRepairChance(0.0)
-                             .caching(Caching.NONE)
+                             .caching(indexCaching)
                              .reloadSecondaryIndexMetadata(parent);
     }
 
