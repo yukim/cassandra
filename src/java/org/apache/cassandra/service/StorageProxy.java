@@ -58,17 +58,11 @@ import org.apache.cassandra.net.*;
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.utils.*;
 
-
 public class StorageProxy implements StorageProxyMBean
 {
     public static final String MBEAN_NAME = "org.apache.cassandra.db:type=StorageProxy";
     private static final Logger logger = LoggerFactory.getLogger(StorageProxy.class);
     private static final boolean OPTIMIZE_LOCAL_REQUESTS = true; // set to false to test messagingservice path on single node
-
-    // mbean stuff
-    private static final LatencyTracker readStats = new LatencyTracker();
-    private static final LatencyTracker rangeStats = new LatencyTracker();
-    private static final LatencyTracker writeStats = new LatencyTracker();
 
     public static final String UNREACHABLE = "UNREACHABLE";
 
@@ -90,6 +84,9 @@ public class StorageProxy implements StorageProxyMBean
         }
     });
     private static final AtomicLong totalHints = new AtomicLong();
+    private static final ClientRequestMetrics readMetrics = new ClientRequestMetrics("Read");
+    private static final ClientRequestMetrics rangeMetrics = new ClientRequestMetrics("RangeSlice");
+    private static final ClientRequestMetrics writeMetrics = new ClientRequestMetrics("Write");
 
     private StorageProxy() {}
 
@@ -202,6 +199,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         catch (TimedOutException ex)
         {
+            writeMetrics.timeouts.inc();
             ClientRequestMetrics.writeTimeouts.inc();
             if (logger.isDebugEnabled())
             {
@@ -214,6 +212,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         catch (UnavailableException e)
         {
+            writeMetrics.unavailables.inc();
             ClientRequestMetrics.writeUnavailables.inc();
             throw e;
         }
@@ -224,7 +223,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         finally
         {
-            writeStats.addNano(System.nanoTime() - startTime);
+            writeMetrics.addNano(System.nanoTime() - startTime);
         }
     }
 
@@ -604,6 +603,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         if (StorageService.instance.isBootstrapMode() && !systemTableQuery(commands))
         {
+            readMetrics.unavailables.inc();
             ClientRequestMetrics.readUnavailables.inc();
             throw new UnavailableException();
         }
@@ -615,17 +615,19 @@ public class StorageProxy implements StorageProxyMBean
         }
         catch (UnavailableException e)
         {
+            readMetrics.unavailables.inc();
             ClientRequestMetrics.readUnavailables.inc();
             throw e;
         }
         catch (TimeoutException e)
         {
+            readMetrics.timeouts.inc();
             ClientRequestMetrics.readTimeouts.inc();
             throw e;
         }
         finally
         {
-            readStats.addNano(System.nanoTime() - startTime);
+            readMetrics.addNano(System.nanoTime() - startTime);
         }
         return rows;
     }
@@ -911,7 +913,15 @@ public class StorageProxy implements StorageProxyMBean
                     // collect replies and resolve according to consistency level
                     RangeSliceResponseResolver resolver = new RangeSliceResponseResolver(nodeCmd.keyspace);
                     ReadCallback<RangeSliceReply, Iterable<Row>> handler = getReadCallback(resolver, nodeCmd, consistency_level, liveEndpoints);
-                    handler.assureSufficientLiveNodes();
+                    try
+                    {
+                        handler.assureSufficientLiveNodes();
+                    }
+                    catch (UnavailableException e)
+                    {
+                        rangeMetrics.unavailables.inc();
+                        throw e;
+                    }
                     resolver.setSources(handler.endpoints);
                     MessageOut<RangeSliceCommand> message = nodeCmd.createMessage();
                     for (InetAddress endpoint : handler.endpoints)
@@ -941,6 +951,7 @@ public class StorageProxy implements StorageProxyMBean
                             {
                                 if (logger.isDebugEnabled())
                                     logger.debug("Range slice timeout: {}", ex.toString());
+                                rangeMetrics.timeouts.inc();
                                 throw ex;
                             }
                             catch (DigestMismatchException e)
@@ -959,7 +970,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         finally
         {
-            rangeStats.addNano(System.nanoTime() - startTime);
+            rangeMetrics.addNano(System.nanoTime() - startTime);
         }
         return trim(command, rows);
     }
@@ -1103,77 +1114,77 @@ public class StorageProxy implements StorageProxyMBean
 
     public long getReadOperations()
     {
-        return readStats.getOpCount();
+        return readMetrics.opCount.count();
     }
 
     public long getTotalReadLatencyMicros()
     {
-        return readStats.getTotalLatencyMicros();
+        return readMetrics.totalLatencyMicro.count();
     }
 
     public double getRecentReadLatencyMicros()
     {
-        return readStats.getRecentLatencyMicros();
+        return readMetrics.recentLatencyMicro.value();
     }
 
     public long[] getTotalReadLatencyHistogramMicros()
     {
-        return readStats.getTotalLatencyHistogramMicros();
+        return readMetrics.totalLatencyHistogramMicro.value();
     }
 
     public long[] getRecentReadLatencyHistogramMicros()
     {
-        return readStats.getRecentLatencyHistogramMicros();
+        return readMetrics.recentLatencyHistogramMicro.value();
     }
 
     public long getRangeOperations()
     {
-        return rangeStats.getOpCount();
+        return rangeMetrics.opCount.count();
     }
 
     public long getTotalRangeLatencyMicros()
     {
-        return rangeStats.getTotalLatencyMicros();
+        return rangeMetrics.totalLatencyMicro.count();
     }
 
     public double getRecentRangeLatencyMicros()
     {
-        return rangeStats.getRecentLatencyMicros();
+        return rangeMetrics.recentLatencyMicro.value();
     }
 
     public long[] getTotalRangeLatencyHistogramMicros()
     {
-        return rangeStats.getTotalLatencyHistogramMicros();
+        return rangeMetrics.totalLatencyHistogramMicro.value();
     }
 
     public long[] getRecentRangeLatencyHistogramMicros()
     {
-        return rangeStats.getRecentLatencyHistogramMicros();
+        return rangeMetrics.recentLatencyHistogramMicro.value();
     }
 
     public long getWriteOperations()
     {
-        return writeStats.getOpCount();
+        return writeMetrics.opCount.count();
     }
 
     public long getTotalWriteLatencyMicros()
     {
-        return writeStats.getTotalLatencyMicros();
+        return writeMetrics.totalLatencyMicro.count();
     }
 
     public double getRecentWriteLatencyMicros()
     {
-        return writeStats.getRecentLatencyMicros();
+        return writeMetrics.recentLatencyMicro.value();
     }
 
     public long[] getTotalWriteLatencyHistogramMicros()
     {
-        return writeStats.getTotalLatencyHistogramMicros();
+        return writeMetrics.totalLatencyHistogramMicro.value();
     }
 
     public long[] getRecentWriteLatencyHistogramMicros()
     {
-        return writeStats.getRecentLatencyHistogramMicros();
+        return writeMetrics.recentLatencyHistogramMicro.value();
     }
 
     public boolean getHintedHandoffEnabled()
