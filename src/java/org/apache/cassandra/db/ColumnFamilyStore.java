@@ -34,6 +34,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Futures;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,11 +64,11 @@ import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.metrics.ColumnFamilyMetrics;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.utils.*;
-import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import static org.apache.cassandra.config.CFMetaData.Caching;
 
@@ -113,19 +114,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     /* Memtables and SSTables on disk for this column family */
     private final DataTracker data;
 
-    private volatile int memtableSwitchCount = 0;
-
     /* This is used to generate the next index for a SSTable */
     private final AtomicInteger fileIndexGenerator = new AtomicInteger(0);
 
     public final SecondaryIndexManager indexManager;
-
-    private final LatencyTracker readStats = new LatencyTracker();
-    private final LatencyTracker writeStats = new LatencyTracker();
-
-    // counts of sstables accessed by reads
-    private final EstimatedHistogram recentSSTablesPerRead = new EstimatedHistogram(35);
-    private final EstimatedHistogram sstablesPerRead = new EstimatedHistogram(35);
 
     private static final int INTERN_CUTOFF = 256;
     public final ConcurrentMap<ByteBuffer, ByteBuffer> internedNames = new NonBlockingHashMap<ByteBuffer, ByteBuffer>();
@@ -141,6 +133,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     volatile double liveRatio = 1.0;
     /** ops count last time we computed liveRatio */
     private final AtomicLong liveRatioComputedAt = new AtomicLong(32);
+
+    public final ColumnFamilyMetrics metric;
 
     public void reload() throws IOException
     {
@@ -217,6 +211,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         this.partitioner = partitioner;
         this.directories = directories;
         this.indexManager = new SecondaryIndexManager(this);
+        this.metric = new ColumnFamilyMetrics(this);
         fileIndexGenerator.set(generation);
 
         Caching caching = metadata.getCaching();
@@ -300,21 +295,24 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         ObjectName nameObj = new ObjectName(mbeanName);
         if (mbs.isRegistered(nameObj))
             mbs.unregisterMBean(nameObj);
+
+        // unregister metrics
+        metric.release();
     }
 
     public long getMinRowSize()
     {
-        return data.getMinRowSize();
+        return metric.minRowSize.value();
     }
 
     public long getMaxRowSize()
     {
-        return data.getMaxRowSize();
+        return metric.maxRowSize.value();
     }
 
     public long getMeanRowSize()
     {
-        return data.getMeanRowSize();
+        return metric.meanRowSize.value();
     }
 
     public int getMeanColumns()
@@ -646,9 +644,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 memtable.flushAndSignal(latch, flushWriter, ctx);
             }
 
-            if (memtableSwitchCount == Integer.MAX_VALUE)
-                memtableSwitchCount = 0;
-            memtableSwitchCount++;
+            if (metric.memtableSwitchCount.count() == Long.MAX_VALUE)
+                metric.memtableSwitchCount.clear();
+            metric.memtableSwitchCount.inc();
 
             // when all the memtables have been written, including for indexes, mark the flush in the commitlog header.
             // a second executor makes sure the onMemtableFlushes get called in the right order,
@@ -752,13 +750,13 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         Memtable mt = getMemtableThreadSafe();
         mt.put(key, columnFamily);
         updateRowCache(key, columnFamily);
-        writeStats.addNano(System.nanoTime() - start);
+        metric.writeLatency.addNano(System.nanoTime() - start);
 
         // recompute liveRatio, if we have doubled the number of ops since last calculated
         while (true)
         {
             long last = liveRatioComputedAt.get();
-            long operations = writeStats.getOpCount();
+            long operations = metric.writeLatency.opCount.count();
             if (operations < 2 * last)
                 break;
             if (liveRatioComputedAt.compareAndSet(last, operations))
@@ -985,12 +983,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public long getMemtableColumnsCount()
     {
-        return getMemtableThreadSafe().getOperations();
+        return metric.memtableColumnsCount.value();
     }
 
     public long getMemtableDataSize()
     {
-        return getMemtableThreadSafe().getLiveSize();
+        return metric.memtableDataSize.value();
     }
 
     public long getTotalMemtableLiveSize()
@@ -1000,7 +998,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public int getMemtableSwitchCount()
     {
-        return memtableSwitchCount;
+        return (int) metric.memtableSwitchCount.count();
     }
 
     /**
@@ -1038,68 +1036,67 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public long[] getRecentSSTablesPerReadHistogram()
     {
-        return recentSSTablesPerRead.getBuckets(true);
+        return metric.recentSSTablesPerReadHistogram.value();
     }
 
     public long[] getSSTablesPerReadHistogram()
     {
-        return sstablesPerRead.getBuckets(false);
+        return metric.sstablesPerReadHistogram.value();
     }
 
     public long getReadCount()
     {
-        return readStats.getOpCount();
+        return metric.readLatency.opCount.count();
     }
 
     public double getRecentReadLatencyMicros()
     {
-        return readStats.getRecentLatencyMicros();
+        return metric.readLatency.recentLatencyMicro.value();
     }
 
     public long[] getLifetimeReadLatencyHistogramMicros()
     {
-        return readStats.getTotalLatencyHistogramMicros();
+        return metric.readLatency.totalLatencyHistogramMicro.value();
     }
 
     public long[] getRecentReadLatencyHistogramMicros()
     {
-        return readStats.getRecentLatencyHistogramMicros();
+        return metric.readLatency.recentLatencyHistogramMicro.value();
     }
 
     public long getTotalReadLatencyMicros()
     {
-        return readStats.getTotalLatencyMicros();
+        return metric.readLatency.totalLatencyMicro.count();
     }
 
-// TODO this actually isn't a good meature of pending tasks
     public int getPendingTasks()
     {
-        return Table.switchLock.getQueueLength();
+        return metric.pendingTasks.value();
     }
 
     public long getWriteCount()
     {
-        return writeStats.getOpCount();
+        return metric.writeLatency.opCount.count();
     }
 
     public long getTotalWriteLatencyMicros()
     {
-        return writeStats.getTotalLatencyMicros();
+        return metric.writeLatency.totalLatencyMicro.count();
     }
 
     public double getRecentWriteLatencyMicros()
     {
-        return writeStats.getRecentLatencyMicros();
+        return metric.writeLatency.recentLatencyMicro.value();
     }
 
     public long[] getLifetimeWriteLatencyHistogramMicros()
     {
-        return writeStats.getTotalLatencyHistogramMicros();
+        return metric.writeLatency.totalLatencyHistogramMicro.value();
     }
 
     public long[] getRecentWriteLatencyHistogramMicros()
     {
-        return writeStats.getRecentLatencyHistogramMicros();
+        return metric.writeLatency.recentLatencyHistogramMicro.value();
     }
 
     public ColumnFamily getColumnFamily(DecoratedKey key, QueryPath path, ByteBuffer start, ByteBuffer finish, boolean reversed, int limit)
@@ -1206,7 +1203,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         }
         finally
         {
-            readStats.addNano(System.nanoTime() - start);
+            metric.readLatency.addNano(System.nanoTime() - start);
         }
     }
 
@@ -1331,8 +1328,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     {
         CollationController controller = new CollationController(this, forCache, filter, gcBefore);
         ColumnFamily columns = controller.getTopLevelColumns();
-        recentSSTablesPerRead.add(controller.getSstablesIterated());
-        sstablesPerRead.add(controller.getSstablesIterated());
+        metric.updateSSTableIterated(controller.getSstablesIterated());
         return columns;
     }
 
@@ -1564,22 +1560,22 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public boolean hasUnreclaimedSpace()
     {
-        return data.getLiveSize() < data.getTotalSize();
+        return getLiveDiskSpaceUsed() < getTotalDiskSpaceUsed();
     }
 
     public long getTotalDiskSpaceUsed()
     {
-        return data.getTotalSize();
+        return metric.totalDiskSpaceUsed.count();
     }
 
     public long getLiveDiskSpaceUsed()
     {
-        return data.getLiveSize();
+        return metric.liveDiskSpaceUsed.count();
     }
 
     public int getLiveSSTableCount()
     {
-        return data.getSSTables().size();
+        return metric.liveSSTableCount.value();
     }
 
     /**
@@ -1793,30 +1789,27 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public long getBloomFilterFalsePositives()
     {
-        return data.getBloomFilterFalsePositives();
+        return metric.bloomFilterFalsePositives.value();
     }
 
     public long getRecentBloomFilterFalsePositives()
     {
-        return data.getRecentBloomFilterFalsePositives();
+        return metric.recentBloomFilterFalsePositives.value();
     }
 
     public double getBloomFilterFalseRatio()
     {
-        return data.getBloomFilterFalseRatio();
+        return metric.bloomFilterFalseRatio.value();
     }
 
     public double getRecentBloomFilterFalseRatio()
     {
-        return data.getRecentBloomFilterFalseRatio();
+        return metric.recentBloomFilterFalseRatio.value();
     }
 
     public long getBloomFilterDiskSpaceUsed()
     {
-        long total = 0;
-        for (SSTableReader sst : getSSTables())
-            total += sst.getBloomFilterSerializedSize();
-        return total;
+        return metric.bloomFilterDiskSpaceUsed.value();
     }
 
     @Override
@@ -1903,17 +1896,17 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public long[] getEstimatedRowSizeHistogram()
     {
-        return data.getEstimatedRowSizeHistogram();
+        return metric.estimatedRowSizeHistogram.value();
     }
 
     public long[] getEstimatedColumnCountHistogram()
     {
-        return data.getEstimatedColumnCountHistogram();
+        return metric.estimatedColumnCountHistogram.value();
     }
 
     public double getCompressionRatio()
     {
-        return data.getCompressionRatio();
+        return metric.compressionRatio.value();
     }
 
     /** true if this CFS contains secondary index data */

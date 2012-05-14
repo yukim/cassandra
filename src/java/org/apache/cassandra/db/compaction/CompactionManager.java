@@ -44,6 +44,7 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.metrics.CompactionMetrics;
 import org.apache.cassandra.service.AntiEntropyService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.*;
@@ -96,6 +97,7 @@ public class CompactionManager implements CompactionManagerMBean
 
     private final CompactionExecutor executor = new CompactionExecutor();
     private final CompactionExecutor validationExecutor = new ValidationExecutor();
+    private final CompactionMetrics metrics = new CompactionMetrics(executor, validationExecutor);
 
     /**
      * @return A lock, for which acquisition means no compactions can run.
@@ -966,6 +968,10 @@ public class CompactionManager implements CompactionManagerMBean
     {
         void beginCompaction(CompactionInfo.Holder ci);
         void finishCompaction(CompactionInfo.Holder ci);
+        long getTotalBytesCompacted();
+        long getTotalCompactionsCompleted();
+        long getTaskCount();
+        long getCompletedTaskCount();
     }
 
     public List<Map<String, String>> getCompactions()
@@ -988,30 +994,22 @@ public class CompactionManager implements CompactionManagerMBean
 
     public long getTotalBytesCompacted()
     {
-        return executor.getTotalBytesCompacted() + validationExecutor.getTotalBytesCompacted();
+        return metrics.totalBytesCompacted.value();
     }
 
     public long getTotalCompactionsCompleted()
     {
-        return executor.getTotalCompactionsCompleted() + validationExecutor.getTotalCompactionsCompleted();
+        return metrics.totalCompactionsCompleted.value();
     }
 
     public int getPendingTasks()
     {
-        int n = 0;
-        for (String tableName : Schema.instance.getTables())
-        {
-            for (ColumnFamilyStore cfs : Table.open(tableName).getColumnFamilyStores())
-            {
-                n += cfs.getCompactionStrategy().getEstimatedRemainingTasks();
-            }
-        }
-        return (int) (executor.getTaskCount() + validationExecutor.getTaskCount() - executor.getCompletedTaskCount() - validationExecutor.getCompletedTaskCount()) + n;
+        return metrics.pendingTasks.value();
     }
 
     public long getCompletedTasks()
     {
-        return executor.getCompletedTaskCount() + validationExecutor.getCompletedTaskCount();
+        return metrics.completedTasks.value();
     }
 
     private static class SimpleFuture implements Future

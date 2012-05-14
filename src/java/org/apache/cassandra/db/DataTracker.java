@@ -20,11 +20,9 @@ package org.apache.cassandra.db;
 import java.io.File;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.collect.*;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,10 +45,6 @@ public class DataTracker
     public final Collection<INotificationConsumer> subscribers = new CopyOnWriteArrayList<INotificationConsumer>();
     public final ColumnFamilyStore cfstore;
     private final AtomicReference<View> view;
-
-    // On disk live and total size
-    private final AtomicLong liveSize = new AtomicLong();
-    private final AtomicLong totalSize = new AtomicLong();
 
     public DataTracker(ColumnFamilyStore cfstore)
     {
@@ -335,8 +329,8 @@ public class DataTracker
                 logger.debug(String.format("adding %s to list of files tracked for %s.%s",
                             sstable.descriptor, cfstore.table.name, cfstore.getColumnFamilyName()));
             long size = sstable.bytesOnDisk();
-            liveSize.addAndGet(size);
-            totalSize.addAndGet(size);
+            cfstore.metric.liveDiskSpaceUsed.inc(size);
+            cfstore.metric.totalDiskSpaceUsed.inc(size);
             sstable.setTrackedBy(this);
         }
     }
@@ -348,26 +342,16 @@ public class DataTracker
             if (logger.isDebugEnabled())
                 logger.debug(String.format("removing %s from list of files tracked for %s.%s",
                             sstable.descriptor, cfstore.table.name, cfstore.getColumnFamilyName()));
-            liveSize.addAndGet(-sstable.bytesOnDisk());
+            cfstore.metric.liveDiskSpaceUsed.dec(sstable.bytesOnDisk());
             boolean firstToCompact = sstable.markCompacted();
             assert firstToCompact : sstable + " was already marked compacted";
             sstable.releaseReference();
         }
     }
 
-    public long getLiveSize()
-    {
-        return liveSize.get();
-    }
-
-    public long getTotalSize()
-    {
-        return totalSize.get();
-    }
-
     public void spaceReclaimed(long size)
     {
-        totalSize.addAndGet(-size);
+        cfstore.metric.totalDiskSpaceUsed.dec(size);
     }
 
     public long estimatedKeys()
@@ -380,85 +364,6 @@ public class DataTracker
         return n;
     }
 
-    public long[] getEstimatedRowSizeHistogram()
-    {
-        long[] histogram = new long[90];
-
-        for (SSTableReader sstable : getSSTables())
-        {
-            long[] rowSize = sstable.getEstimatedRowSize().getBuckets(false);
-
-            for (int i = 0; i < histogram.length; i++)
-                histogram[i] += rowSize[i];
-        }
-
-        return histogram;
-    }
-
-    public long[] getEstimatedColumnCountHistogram()
-    {
-        long[] histogram = new long[90];
-
-        for (SSTableReader sstable : getSSTables())
-        {
-            long[] columnSize = sstable.getEstimatedColumnCount().getBuckets(false);
-
-            for (int i = 0; i < histogram.length; i++)
-                histogram[i] += columnSize[i];
-        }
-
-        return histogram;
-    }
-
-    public double getCompressionRatio()
-    {
-        double sum = 0;
-        int total = 0;
-        for (SSTableReader sstable : getSSTables())
-        {
-            if (sstable.getCompressionRatio() != Double.MIN_VALUE)
-            {
-                sum += sstable.getCompressionRatio();
-                total++;
-            }
-        }
-        return total != 0 ? (double)sum/total: 0;
-    }
-
-    public long getMinRowSize()
-    {
-        long min = 0;
-        for (SSTableReader sstable : getSSTables())
-        {
-            if (min == 0 || sstable.getEstimatedRowSize().min() < min)
-                min = sstable.getEstimatedRowSize().min();
-        }
-        return min;
-    }
-
-    public long getMaxRowSize()
-    {
-        long max = 0;
-        for (SSTableReader sstable : getSSTables())
-        {
-            if (sstable.getEstimatedRowSize().max() > max)
-                max = sstable.getEstimatedRowSize().max();
-        }
-        return max;
-    }
-
-    public long getMeanRowSize()
-    {
-        long sum = 0;
-        long count = 0;
-        for (SSTableReader sstable : getSSTables())
-        {
-            sum += sstable.getEstimatedRowSize().mean();
-            count++;
-        }
-        return count > 0 ? sum / count : 0;
-    }
-
     public int getMeanColumns()
     {
         long sum = 0;
@@ -469,54 +374,6 @@ public class DataTracker
             count++;
         }
         return count > 0 ? (int) (sum / count) : 0;
-    }
-
-    public long getBloomFilterFalsePositives()
-    {
-        long count = 0L;
-        for (SSTableReader sstable: getSSTables())
-        {
-            count += sstable.getBloomFilterFalsePositiveCount();
-        }
-        return count;
-    }
-
-    public long getRecentBloomFilterFalsePositives()
-    {
-        long count = 0L;
-        for (SSTableReader sstable: getSSTables())
-        {
-            count += sstable.getRecentBloomFilterFalsePositiveCount();
-        }
-        return count;
-    }
-
-    public double getBloomFilterFalseRatio()
-    {
-        long falseCount = 0L;
-        long trueCount = 0L;
-        for (SSTableReader sstable: getSSTables())
-        {
-            falseCount += sstable.getBloomFilterFalsePositiveCount();
-            trueCount += sstable.getBloomFilterTruePositiveCount();
-        }
-        if (falseCount == 0L && trueCount == 0L)
-            return 0d;
-        return (double) falseCount / (trueCount + falseCount);
-    }
-
-    public double getRecentBloomFilterFalseRatio()
-    {
-        long falseCount = 0L;
-        long trueCount = 0L;
-        for (SSTableReader sstable: getSSTables())
-        {
-            falseCount += sstable.getRecentBloomFilterFalsePositiveCount();
-            trueCount += sstable.getRecentBloomFilterTruePositiveCount();
-        }
-        if (falseCount == 0L && trueCount == 0L)
-            return 0d;
-        return (double) falseCount / (trueCount + falseCount);
     }
 
     public void notifySSTablesChanged(Iterable<SSTableReader> removed, Iterable<SSTableReader> added, OperationType compactionType)
