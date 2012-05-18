@@ -18,14 +18,11 @@
 package org.apache.cassandra.db;
 
 import java.io.DataInput;
-import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.IOException;
 
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.io.IVersionedSerializer;
-import org.apache.cassandra.io.util.FastByteArrayInputStream;
-import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.thrift.IndexClause;
@@ -66,9 +63,17 @@ public class IndexScanCommand
         {
             out.writeUTF(o.keyspace);
             out.writeUTF(o.column_family);
-            TSerializer ser = new TSerializer(new TBinaryProtocol.Factory());
-            FBUtilities.serialize(ser, o.index_clause, out);
-            FBUtilities.serialize(ser, o.predicate, out);
+            if (version < MessagingService.VERSION_12)
+            {
+                TSerializer ser = new TSerializer(new TBinaryProtocol.Factory());
+                FBUtilities.serialize(ser, o.index_clause, out);
+                FBUtilities.serialize(ser, o.predicate, out);
+            }
+            else
+            {
+                FBUtilities.serialize(o.index_clause, out);
+                FBUtilities.serialize(o.predicate, out);
+            }
             AbstractBounds.serializer.serialize(o.range, out, version);
         }
 
@@ -77,11 +82,19 @@ public class IndexScanCommand
             String keyspace = in.readUTF();
             String columnFamily = in.readUTF();
 
-            TDeserializer dser = new TDeserializer(new TBinaryProtocol.Factory());
             IndexClause indexClause = new IndexClause();
-            FBUtilities.deserialize(dser, indexClause, in);
             SlicePredicate predicate = new SlicePredicate();
-            FBUtilities.deserialize(dser, predicate, in);
+            if (version < MessagingService.VERSION_12)
+            {
+                TDeserializer dser = new TDeserializer(new TBinaryProtocol.Factory());
+                FBUtilities.deserialize(dser, indexClause, in);
+                FBUtilities.deserialize(dser, predicate, in);
+            }
+            else
+            {
+                FBUtilities.deserialize(indexClause, in);
+                FBUtilities.deserialize(predicate, in);
+            }
             AbstractBounds<RowPosition> range = AbstractBounds.serializer.deserialize(in, version).toRowBounds();
             return new IndexScanCommand(keyspace, columnFamily, indexClause, predicate, range);
         }

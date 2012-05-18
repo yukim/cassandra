@@ -35,6 +35,9 @@ import java.util.concurrent.TimeoutException;
 import com.google.common.base.Joiner;
 import com.google.common.collect.AbstractIterator;
 import org.apache.commons.lang.StringUtils;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TIOStreamTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +45,6 @@ import org.apache.cassandra.cache.IRowCacheProvider;
 import org.apache.cassandra.concurrent.CreationTimeAwareFuture;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
@@ -240,6 +242,65 @@ public class FBUtilities
         new File(tmpFilename).renameTo(new File(filename));
     }
 
+    /**
+     * Serialize Thrift {@link TBase} object directly to {@link DataOutput}.
+     *
+     * @param struct object to serialize
+     * @param out serialize output
+     * @throws IOException
+     * @since 1.2
+     */
+    public static void serialize(TBase struct, final DataOutput out) throws IOException
+    {
+        assert struct != null;
+        assert out != null;
+        try
+        {
+            TProtocol protocol = new TBinaryProtocol.Factory().getProtocol(new TIOStreamTransport(new OutputStream()
+            {
+                public void write(int b) throws IOException
+                {
+                    out.write(b);
+                }
+            }));
+            struct.write(protocol);
+        }
+        catch (TException e)
+        {
+            throw new IOException(e);
+        }
+    }
+
+    /**
+     * Deserialize Thrift {@link TBase} object directly from {@link DataInput}.
+     *
+     * @param struct object to deserialize into
+     * @param in deserialize input
+     * @throws IOException
+     * @since 1.2
+     */
+    public static void deserialize(TBase struct, final DataInput in) throws IOException
+    {
+        assert struct != null;
+        assert in != null;
+        try
+        {
+            TProtocol protocol = new TBinaryProtocol.Factory().getProtocol(new TIOStreamTransport(new InputStream()
+            {
+                public int read() throws IOException
+                {
+                    return in.readByte();
+                }
+            }));
+            struct.read(protocol);
+        }
+        catch (TException e)
+        {
+            throw new IOException(e);
+        }
+    }
+
+    @Deprecated
     public static void serialize(TSerializer serializer, TBase struct, DataOutput out)
     throws IOException
     {
@@ -259,6 +320,7 @@ public class FBUtilities
         out.write(bytes);
     }
 
+    @Deprecated
     public static void deserialize(TDeserializer deserializer, TBase struct, DataInput in)
     throws IOException
     {

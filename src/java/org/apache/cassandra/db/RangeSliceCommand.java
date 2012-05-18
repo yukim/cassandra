@@ -149,8 +149,16 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
         if (sc != null)
             ByteBufferUtil.write(sc, dos);
 
-        TSerializer ser = new TSerializer(new TBinaryProtocol.Factory());
-        FBUtilities.serialize(ser, sliceCommand.predicate, dos);
+        TSerializer ser = null;
+        if (version < MessagingService.VERSION_12)
+        {
+            ser = new TSerializer(new TBinaryProtocol.Factory());
+            FBUtilities.serialize(ser, sliceCommand.predicate, dos);
+        }
+        else
+        {
+            FBUtilities.serialize(sliceCommand.predicate, dos);
+        }
 
         if (version >= MessagingService.VERSION_11)
         {
@@ -162,7 +170,12 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
             {
                 dos.writeInt(sliceCommand.row_filter.size());
                 for (IndexExpression expr : sliceCommand.row_filter)
-                    FBUtilities.serialize(ser, expr, dos);
+                {
+                    if (version < MessagingService.VERSION_12)
+                        FBUtilities.serialize(ser, expr, dos);
+                    else
+                        FBUtilities.serialize(expr, dos);
+                }
             }
         }
         AbstractBounds.serializer.serialize(sliceCommand.range, dos, version);
@@ -188,9 +201,17 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
             superColumn = ByteBuffer.wrap(buf);
         }
 
-        TDeserializer dser = new TDeserializer(new TBinaryProtocol.Factory());
+        TDeserializer dser = null;
         SlicePredicate pred = new SlicePredicate();
-        FBUtilities.deserialize(dser, pred, dis);
+        if (version < MessagingService.VERSION_12)
+        {
+            dser = new TDeserializer(new TBinaryProtocol.Factory());
+            FBUtilities.deserialize(dser, pred, dis);
+        }
+        else
+        {
+            FBUtilities.deserialize(pred, dis);
+        }
 
         List<IndexExpression> rowFilter = null;
         if (version >= MessagingService.VERSION_11)
@@ -200,7 +221,10 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
             for (int i = 0; i < filterCount; i++)
             {
                 IndexExpression expr = new IndexExpression();
-                FBUtilities.deserialize(dser, expr, dis);
+                if (version < MessagingService.VERSION_12)
+                    FBUtilities.deserialize(dser, expr, dis);
+                else
+                    FBUtilities.deserialize(expr, dis);
                 rowFilter.add(expr);
             }
         }
@@ -237,7 +261,8 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
         try
         {
             int predicateLength = ser.serialize(rsc.predicate).length;
-            size += TypeSizes.NATIVE.sizeof(predicateLength);
+            if (version < MessagingService.VERSION_12)
+                size += TypeSizes.NATIVE.sizeof(predicateLength);
             size += predicateLength;
         }
         catch (TException e)
@@ -259,7 +284,8 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
                     try
                     {
                         int filterLength = ser.serialize(expr).length;
-                        size += TypeSizes.NATIVE.sizeof(filterLength);
+                        if (version < MessagingService.VERSION_12)
+                            size += TypeSizes.NATIVE.sizeof(filterLength);
                         size += filterLength;
                     }
                     catch (TException e)
