@@ -38,14 +38,22 @@ import org.apache.cassandra.service.StorageService;
  */
 public abstract class AbstractCompactionStrategy
 {
+    protected static final float DEFAULT_TOMBSTONE_THRESHOLD = 0.2f;
+    protected static final String TOMBSTONE_THRESHOLD_KEY = "tombstone_threshold";
+
     protected final ColumnFamilyStore cfs;
     protected final Map<String, String> options;
+
+    protected float tombstoneThreshold;
 
     protected AbstractCompactionStrategy(ColumnFamilyStore cfs, Map<String, String> options)
     {
         assert cfs != null;
         this.cfs = cfs;
         this.options = options;
+
+        String optionValue = options.get(TOMBSTONE_THRESHOLD_KEY);
+        tombstoneThreshold = (null != optionValue) ? Float.parseFloat(optionValue) : DEFAULT_TOMBSTONE_THRESHOLD;
 
         // start compactions in five minutes (if no flushes have occurred by then to do so)
         Runnable runnable = new Runnable()

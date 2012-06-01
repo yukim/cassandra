@@ -34,12 +34,9 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 {
     private static final Logger logger = LoggerFactory.getLogger(SizeTieredCompactionStrategy.class);
     protected static final long DEFAULT_MIN_SSTABLE_SIZE = 50L * 1024L * 1024L;
-    protected static final float DEFAULT_TOMBSTONE_THRESHOLD = 0.2f;
     protected static final String MIN_SSTABLE_SIZE_KEY = "min_sstable_size";
-    protected static final String TOMBSTONE_THRESHOLD_KEY = "tombstone_threshold";
     protected long minSSTableSize;
     protected volatile int estimatedRemainingTasks;
-    protected float tombstoneThreshold;
 
     public SizeTieredCompactionStrategy(ColumnFamilyStore cfs, Map<String, String> options)
     {
@@ -49,8 +46,6 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         minSSTableSize = (null != optionValue) ? Long.parseLong(optionValue) : DEFAULT_MIN_SSTABLE_SIZE;
         cfs.setMaximumCompactionThreshold(cfs.metadata.getMaxCompactionThreshold());
         cfs.setMinimumCompactionThreshold(cfs.metadata.getMinCompactionThreshold());
-        optionValue = options.get(TOMBSTONE_THRESHOLD_KEY);
-        tombstoneThreshold = (null != optionValue) ? Float.parseFloat(optionValue) : DEFAULT_TOMBSTONE_THRESHOLD;
     }
 
     public AbstractCompactionTask getNextBackgroundTask(final int gcBefore)
