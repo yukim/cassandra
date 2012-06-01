@@ -154,4 +154,40 @@ public abstract class AbstractCompactionStrategy
     {
         return getScanners(toCompact, null);
     }
+
+    /**
+     * @param sstable SSTable to check
+     * @param gcBefore time to drop tombstones
+     * @return true if given sstable's tombstones are expected to be removed
+     */
+    protected boolean canDropTombstone(SSTableReader sstable, int gcBefore)
+    {
+        double droppableRatio = sstable.getEstimatedDroppableTombstoneRatio(gcBefore);
+        if (droppableRatio <= tombstoneThreshold)
+            return false;
+
+        Set<SSTableReader> overlaps = cfs.getOverlappingSSTables(Collections.singleton(sstable));
+        if (overlaps.isEmpty())
+        {
+            // there is no overlap, tombstones are safely droppable
+            return true;
+        }
+        else
+        {
+            // what percentage of columns do we expect to compact outside of overlap?
+            // first, calculate estimated keys that do not overlap
+            long keys = sstable.estimatedKeys();
+            Set<Range<Token>> ranges = new HashSet<Range<Token>>();
+            for (SSTableReader overlap : overlaps)
+                ranges.add(new Range<Token>(overlap.first.token, overlap.last.token));
+            long remainingKeys = keys - sstable.estimatedKeysForRanges(ranges);
+            // next, calculate what percentage of columns we have within those keys
+            double remainingKeysRatio = ((double) remainingKeys) / keys;
+            long columns = sstable.getEstimatedColumnCount().percentile(remainingKeysRatio) * remainingKeys;
+            double remainingColumnsRatio = ((double) columns) / (sstable.getEstimatedColumnCount().count() * sstable.getEstimatedColumnCount().mean());
+
+            // return if we still expect to have droppable tombstones in rest of columns
+            return remainingColumnsRatio * droppableRatio > tombstoneThreshold;
+        }
+    }
 }

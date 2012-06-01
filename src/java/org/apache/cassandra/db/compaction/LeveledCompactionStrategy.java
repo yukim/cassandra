@@ -110,13 +110,22 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
         }
 
         Collection<SSTableReader> sstables = manifest.getCompactionCandidates();
+        OperationType op = OperationType.COMPACTION;
         if (sstables.isEmpty())
         {
-            logger.debug("No compaction necessary for {}", this);
-            return null;
+            // if there is no sstable to compact in standard way, try compacting based on droppable tombstone ratio
+            SSTableReader sstable = findDroppableSSTable(gcBefore);
+            if (sstable == null)
+            {
+                logger.debug("No compaction necessary for {}", this);
+                return null;
+            }
+            sstables = Collections.singleton(sstable);
+            op = OperationType.TOMBSTONE_COMPACTION;
         }
 
         LeveledCompactionTask newTask = new LeveledCompactionTask(cfs, sstables, gcBefore, this.maxSSTableSizeInMB);
+        newTask.setCompactionType(op);
         return task.compareAndSet(currentTask, newTask)
                ? newTask
                : null;
@@ -148,6 +157,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
                 case CLEANUP:
                 case SCRUB:
                 case UPGRADE_SSTABLES:
+                case TOMBSTONE_COMPACTION: // Also when performing tombstone removal.
                     manifest.replace(listChangedNotification.removed, listChangedNotification.added);
                     break;
                 default:
@@ -279,5 +289,21 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
     public String toString()
     {
         return String.format("LCS@%d(%s)", hashCode(), cfs.columnFamily);
+    }
+
+    private SSTableReader findDroppableSSTable(int gcBefore)
+    {
+        for (int i = manifest.getLevelCount(); i >= 0; i--)
+        {
+            List<SSTableReader> candidates = manifest.getLevel(i);
+            for (SSTableReader sstable : candidates)
+            {
+                if (!sstable.isMarkedSuspect() && canDropTombstone(sstable, gcBefore))
+                {
+                    return sstable;
+                }
+            }
+        }
+        return null;
     }
 }

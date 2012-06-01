@@ -85,34 +85,8 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             {
                 for (SSTableReader table : bucket)
                 {
-                    double droppableRatio = table.getEstimatedDroppableTombstoneRatio(gcBefore);
-                    if (droppableRatio <= tombstoneThreshold)
-                        continue;
-
-                    Set<SSTableReader> overlaps = cfs.getOverlappingSSTables(Collections.singleton(table));
-                    if (overlaps.isEmpty())
-                    {
-                        // there is no overlap, tombstones are safely droppable
+                    if (canDropTombstone(table, gcBefore))
                         prunedBuckets.add(Collections.singletonList(table));
-                    }
-                    else
-                    {
-                        // what percentage of columns do we expect to compact outside of overlap?
-                        // first, calculate estimated keys that do not overlap
-                        long keys = table.estimatedKeys();
-                        Set<Range<Token>> ranges = new HashSet<Range<Token>>();
-                        for (SSTableReader overlap : overlaps)
-                            ranges.add(new Range<Token>(overlap.first.token, overlap.last.token));
-                        long remainingKeys = keys - table.estimatedKeysForRanges(ranges);
-                        // next, calculate what percentage of columns we have within those keys
-                        double remainingKeysRatio = ((double) remainingKeys) / keys;
-                        long columns = table.getEstimatedColumnCount().percentile(remainingKeysRatio) * remainingKeys;
-                        double remainingColumnsRatio = ((double) columns) / (table.getEstimatedColumnCount().count() * table.getEstimatedColumnCount().mean());
-
-                        // if we still expect to have droppable tombstones in rest of columns, then try compacting it
-                        if (remainingColumnsRatio * droppableRatio > tombstoneThreshold)
-                            prunedBuckets.add(Collections.singletonList(table));
-                    }
                 }
             }
 
