@@ -73,6 +73,7 @@ public final class DirectBufferPool
                     buffers[i].limit(remainder);
                     buffers[i] = buffers[i].slice();
                 }
+                buffers[i].clear();
             }
             return buffers;
         }
