@@ -29,7 +29,7 @@ import org.apache.cassandra.utils.DirectBufferPool;
 
 public class SequentialWriter extends OutputStream
 {
-    private static final DirectBufferPool pool = new DirectBufferPool(RandomAccessReader.DEFAULT_BUFFER_SIZE, 1024);
+    protected static final DirectBufferPool pool = new DirectBufferPool(RandomAccessReader.DEFAULT_BUFFER_SIZE, 1024);
 
     // isDirty - true if this.buffer contains any un-synced bytes
     protected boolean isDirty = false, syncNeeded = false;
@@ -316,6 +316,7 @@ public class SequentialWriter extends OutputStream
         if (previous - current <= validBufferBytes) // current buffer
         {
             validBufferBytes = validBufferBytes - ((int) (previous - current));
+            buffers[validBufferBytes / pool.getBlockSize()].position(validBufferBytes % pool.getBlockSize());
             return;
         }
 
