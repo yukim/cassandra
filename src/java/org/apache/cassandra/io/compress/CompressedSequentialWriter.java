@@ -19,6 +19,7 @@ package org.apache.cassandra.io.compress;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 import java.util.zip.Checksum;
 
@@ -53,13 +54,16 @@ public class CompressedSequentialWriter extends SequentialWriter
 
     private final Collector sstableMetadataCollector;
 
+    private byte[] buffer;
+
     public CompressedSequentialWriter(File file, String indexFilePath, boolean skipIOCache, CompressionParameters parameters, Collector sstableMetadataCollector) throws IOException
     {
         super(file, parameters.chunkLength(), skipIOCache);
         this.compressor = parameters.sstableCompressor;
 
         // buffer for compression should be the same size as buffer itself
-        compressed = new ICompressor.WrappedArray(new byte[compressor.initialCompressedBufferLength(buffer.length)]);
+        compressed = new ICompressor.WrappedArray(new byte[compressor.initialCompressedBufferLength(bufferCapacity)]);
+        buffer = new byte[bufferCapacity];
 
         /* Index File (-CompressionInfo.db component) and it's header */
         metadataWriter = new CompressionMetadata.Writer(indexFilePath);
@@ -85,6 +89,12 @@ public class CompressedSequentialWriter extends SequentialWriter
         seekToChunkStart();
 
         // compressing data with buffer re-use
+        int offset = 0;
+        for (ByteBuffer buf : buffers)
+        {
+            buf.flip();
+            offset += buf.get(buffer, offset, buf.remaining()).position();
+        }
         int compressedLength = compressor.compress(buffer, 0, validBufferBytes, compressed, 0);
 
         originalSize += validBufferBytes;
@@ -183,8 +193,10 @@ public class CompressedSequentialWriter extends SequentialWriter
     @Override
     public void close() throws IOException
     {
-        if (buffer == null)
+        if (buffers == null)
             return; // already closed
+
+        buffer = null;
 
         super.close();
         sstableMetadataCollector.addCompressionRatio(compressedSize, originalSize);

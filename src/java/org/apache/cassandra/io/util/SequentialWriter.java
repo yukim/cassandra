@@ -18,15 +18,19 @@
 package org.apache.cassandra.io.util;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.utils.CLibrary;
+import org.apache.cassandra.utils.DirectBufferPool;
 
 public class SequentialWriter extends OutputStream
 {
+    private static final DirectBufferPool pool = new DirectBufferPool(RandomAccessReader.DEFAULT_BUFFER_SIZE, 1024);
+
     // isDirty - true if this.buffer contains any un-synced bytes
     protected boolean isDirty = false, syncNeeded = false;
 
@@ -36,7 +40,9 @@ public class SequentialWriter extends OutputStream
     // so we can use the write(int) path w/o tons of new byte[] allocations
     private final byte[] singleByteBuffer = new byte[1];
 
-    protected byte[] buffer;
+    protected ByteBuffer[] buffers;
+    protected int bufferCapacity;
+
     private final boolean skipIOCache;
     private final int fd;
     private final int directoryFD;
@@ -66,7 +72,10 @@ public class SequentialWriter extends OutputStream
 
         filePath = file.getAbsolutePath();
 
-        buffer = new byte[bufferSize];
+        buffers = pool.allocate(bufferSize);
+        for (ByteBuffer buff : buffers)
+            bufferCapacity += buff.capacity();
+
         this.skipIOCache = skipIOCache;
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
         this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024;
@@ -103,7 +112,7 @@ public class SequentialWriter extends OutputStream
 
     public void write(byte[] data, int offset, int length) throws IOException
     {
-        if (buffer == null)
+        if (buffers == null)
             throw new ClosedChannelException();
 
         while (length > 0)
@@ -123,19 +132,27 @@ public class SequentialWriter extends OutputStream
      */
     private int writeAtMost(byte[] data, int offset, int length) throws IOException
     {
-        if (current >= bufferOffset + buffer.length)
+        if (current >= bufferOffset + bufferCapacity)
             reBuffer();
 
-        assert current < bufferOffset + buffer.length
+        assert current < bufferOffset + bufferCapacity
                 : String.format("File (%s) offset %d, buffer offset %d.", getPath(), current, bufferOffset);
 
 
-        int toCopy = Math.min(length, buffer.length - bufferCursor());
+        int toCopy = Math.min(length, bufferCapacity - bufferCursor());
 
         // copy bytes from external buffer
-        System.arraycopy(data, offset, buffer, bufferCursor(), toCopy);
+        int copied = 0;
+        for (ByteBuffer buff : buffers)
+        {
+            while (buff.hasRemaining() && copied < toCopy)
+            {
+                buff.put(data[offset + copied]);
+                copied++;
+            }
+        }
 
-        assert current <= bufferOffset + buffer.length
+        assert current <= bufferOffset + bufferCapacity
                 : String.format("File (%s) offset %d, buffer offset %d.", getPath(), current, bufferOffset);
 
         validBufferBytes = Math.max(validBufferBytes, bufferCursor() + toCopy);
@@ -234,9 +251,20 @@ public class SequentialWriter extends OutputStream
      */
     protected void flushData() throws IOException
     {
-        out.write(buffer, 0, validBufferBytes);
+        for (ByteBuffer buff : buffers)
+            buff.flip();
+        int written = (int) out.getChannel().write(buffers);
         if (digest != null)
-            digest.update(buffer, 0, validBufferBytes);
+        {
+            byte[] toDigest = new byte[written];
+            int offset = 0;
+            for (ByteBuffer buf : buffers)
+            {
+                buf.flip();
+                offset += buf.get(toDigest, offset, buf.remaining()).position();
+            }
+            digest.update(toDigest);
+        }
     }
 
     public long getFilePointer()
@@ -264,6 +292,8 @@ public class SequentialWriter extends OutputStream
     {
         bufferOffset = current;
         validBufferBytes = 0;
+        for (ByteBuffer buff : buffers)
+            buff.clear();
     }
 
     private int bufferCursor()
@@ -310,12 +340,13 @@ public class SequentialWriter extends OutputStream
     @Override
     public void close() throws IOException
     {
-        if (buffer == null)
+        if (buffers == null)
             return; // already closed
 
         syncInternal();
 
-        buffer = null;
+        pool.free(buffers);
+        buffers = null;
 
         if (skipIOCache && bytesSinceCacheFlush > 0)
             CLibrary.trySkipCache(fd, 0, 0);
@@ -353,7 +384,7 @@ public class SequentialWriter extends OutputStream
      */
     public byte[] digest()
     {
-        if (buffer != null)
+        if (buffers != null)
             throw new IllegalStateException();
 
         return digest == null ? null : digest.digest();
