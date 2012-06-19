@@ -141,6 +141,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             // just reset a buffer offset and return
             validBufferBytes = realMark.bufferOffset;
+            buffers[validBufferBytes / pool.getBlockSize()].position(validBufferBytes % pool.getBlockSize());
             return;
         }
 
@@ -161,6 +162,15 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // decompress data chunk and store its length
         int validBytes = compressor.uncompress(compressed.buffer, 0, chunkSize, buffer, 0);
+        int copied = 0;
+        for (ByteBuffer buff : buffers)
+        {
+            while (buff.hasRemaining() && copied < buffer.length)
+            {
+                buff.put(buffer[copied]);
+                copied++;
+            }
+        }
 
         checksum.update(buffer, 0, validBytes);
 
@@ -171,6 +181,7 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // reset buffer
         validBufferBytes = realMark.bufferOffset;
+        buffers[validBufferBytes / pool.getBlockSize()].position(validBufferBytes % pool.getBlockSize());
         bufferOffset = current - validBufferBytes;
         chunkCount = realMark.nextChunkIndex - 1;
 
@@ -195,8 +206,6 @@ public class CompressedSequentialWriter extends SequentialWriter
     {
         if (buffers == null)
             return; // already closed
-
-        buffer = null;
 
         super.close();
         sstableMetadataCollector.addCompressionRatio(compressedSize, originalSize);
