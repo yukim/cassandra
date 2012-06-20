@@ -63,7 +63,7 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // buffer for compression should be the same size as buffer itself
         compressed = new ICompressor.WrappedArray(new byte[compressor.initialCompressedBufferLength(bufferCapacity)]);
-        buffer = new byte[bufferCapacity];
+        buffer = buffers[0].array(); // CompressedSequentialWriter uses heap ByteBuffer of array size 1
 
         /* Index File (-CompressionInfo.db component) and it's header */
         metadataWriter = new CompressionMetadata.Writer(indexFilePath);
@@ -89,12 +89,6 @@ public class CompressedSequentialWriter extends SequentialWriter
         seekToChunkStart();
 
         // compressing data with buffer re-use
-        int offset = 0;
-        for (ByteBuffer buf : buffers)
-        {
-            buf.flip();
-            offset += buf.get(buffer, offset, buf.remaining()).position();
-        }
         int compressedLength = compressor.compress(buffer, 0, validBufferBytes, compressed, 0);
 
         originalSize += validBufferBytes;
@@ -162,16 +156,6 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // decompress data chunk and store its length
         int validBytes = compressor.uncompress(compressed.buffer, 0, chunkSize, buffer, 0);
-        int copied = 0;
-        for (ByteBuffer buff : buffers)
-        {
-            while (buff.hasRemaining() && copied < buffer.length)
-            {
-                buff.put(buffer[copied]);
-                copied++;
-            }
-        }
-
         checksum.update(buffer, 0, validBytes);
 
         if (out.readInt() != (int) checksum.getValue())
@@ -190,6 +174,10 @@ public class CompressedSequentialWriter extends SequentialWriter
         metadataWriter.resetAndTruncate(realMark.nextChunkIndex);
     }
 
+    protected ByteBuffer[] allocate(int size)
+    {
+        return new ByteBuffer[]{ByteBuffer.allocate(size)};
+    }
     /**
      * Seek to the offset where next compressed data chunk should be stored.
      *
