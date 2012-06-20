@@ -18,7 +18,6 @@
 package org.apache.cassandra.utils;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -94,6 +93,10 @@ public final class DirectBufferPool
      */
     public void free(ByteBuffer... buffers)
     {
-        Collections.addAll(pool, buffers);
+        for (ByteBuffer buff : buffers)
+        {
+            if (buff.isDirect())
+                pool.add(buff);
+        }
     }
 }

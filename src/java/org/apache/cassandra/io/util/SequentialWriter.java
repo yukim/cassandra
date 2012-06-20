@@ -72,7 +72,7 @@ public class SequentialWriter extends OutputStream
 
         filePath = file.getAbsolutePath();
 
-        buffers = pool.allocate(bufferSize);
+        buffers = allocate(bufferSize);
         for (ByteBuffer buff : buffers)
             bufferCapacity += buff.capacity();
 
@@ -389,6 +389,11 @@ public class SequentialWriter extends OutputStream
             throw new IllegalStateException();
 
         return digest == null ? null : digest.digest();
+    }
+
+    protected ByteBuffer[] allocate(int size)
+    {
+        return pool.allocate(size);
     }
 
     /**
