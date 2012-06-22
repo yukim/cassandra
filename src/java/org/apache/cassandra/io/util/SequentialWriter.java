@@ -253,17 +253,14 @@ public class SequentialWriter extends OutputStream
     {
         for (ByteBuffer buff : buffers)
             buff.flip();
-        int written = (int) out.getChannel().write(buffers);
+        out.getChannel().write(buffers);
         if (digest != null)
         {
-            byte[] toDigest = new byte[written];
-            int offset = 0;
             for (ByteBuffer buf : buffers)
             {
                 buf.flip();
-                offset += buf.get(toDigest, offset, buf.remaining()).position();
+                digest.update(buf);
             }
-            digest.update(toDigest);
         }
     }
 
