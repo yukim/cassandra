@@ -110,6 +110,23 @@ public class Directories
         }
     }
 
+    /**
+     * Returns SSTable location which is inside given data directory.
+     *
+     * @param dataDirectory
+     * @return SSTable location
+     * @throws IOException
+     */
+    public File getLocationForDisk(File dataDirectory) throws IOException
+    {
+        for (File dir : sstableDirectories)
+        {
+            if (dir.getCanonicalPath().startsWith(dataDirectory.getCanonicalPath()))
+                return dir;
+        }
+        return null;
+    }
+
     public File getDirectoryForNewSSTables(long estimatedSize)
     {
         File path = getLocationWithMaximumAvailableSpace(estimatedSize);
