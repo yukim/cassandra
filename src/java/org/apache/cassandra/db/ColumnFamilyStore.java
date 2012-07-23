@@ -1924,16 +1924,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return intern(name);
     }
 
-    public SSTableWriter createFlushWriter(long estimatedRows, long estimatedSize, ReplayPosition context) throws IOException
-    {
-        SSTableMetadata.Collector sstableMetadataCollector = SSTableMetadata.createCollector().replayPosition(context);
-        return new SSTableWriter(getFlushPath(estimatedSize, Descriptor.Version.CURRENT),
-                                 estimatedRows,
-                                 metadata,
-                                 partitioner,
-                                 sstableMetadataCollector);
-    }
-
     public SSTableWriter createCompactionWriter(long estimatedRows, File location, Collection<SSTableReader> sstables) throws IOException
     {
         ReplayPosition rp = ReplayPosition.getReplayPosition(sstables);

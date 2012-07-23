@@ -42,7 +42,7 @@ public class StorageServiceServerTest
         SchemaLoader.mkdirs();
         SchemaLoader.cleanup();
         StorageService.instance.initServer(0);
-        for (String path : DatabaseDescriptor.getAllDataFileLocations())
+        for (String path : DatabaseDescriptor.getAllDataFileLocations().keySet())
         {
             // verify that storage directories are there.
             assertTrue(new File(path).exists());

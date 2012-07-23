@@ -1860,9 +1860,10 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
 
     public String[] getAllDataFileLocations()
     {
-        String[] locations = DatabaseDescriptor.getAllDataFileLocations();
-        for (int i = 0; i < locations.length; i++)
-            locations[i] = getCanonicalPath(locations[i]);
+        String[] locations = new String[DatabaseDescriptor.getAllDataFileLocations().size()];
+        int i = 0;
+        for (String location : DatabaseDescriptor.getAllDataFileLocations().keySet())
+            locations[i++] = getCanonicalPath(location);
         return locations;
     }
 

@@ -53,6 +53,8 @@ import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
+
 import org.yaml.snakeyaml.Loader;
 import org.yaml.snakeyaml.TypeDescription;
 import org.yaml.snakeyaml.Yaml;
@@ -87,6 +89,8 @@ public class DatabaseDescriptor
 
     private static long keyCacheSizeInMB;
     private static IRowCacheProvider rowCacheProvider;
+
+    private static Map<String, Integer> dataFileDirectories;
 
     /**
      * Inspect the classpath to find storage configuration file
@@ -202,7 +206,7 @@ public class DatabaseDescriptor
             if (conf.disk_access_mode == Config.DiskAccessMode.mmap)
                 MmappedSegmentedFile.initCleaner();
 
-	        logger.debug("page_cache_hinting is " + conf.populate_io_cache_on_flush);
+            logger.debug("page_cache_hinting is " + conf.populate_io_cache_on_flush);
 
             /* Authentication and authorization backend, implementing IAuthenticator and IAuthority */
             if (conf.authenticator != null)
@@ -253,16 +257,6 @@ public class DatabaseDescriptor
             if (conf.memtable_total_space_in_mb <= 0)
                 throw new ConfigurationException("memtable_total_space_in_mb must be positive");
             logger.info("Global memtable threshold is enabled at {}MB", conf.memtable_total_space_in_mb);
-
-            /* Memtable flush writer threads */
-            if (conf.memtable_flush_writers != null && conf.memtable_flush_writers < 1)
-            {
-                throw new ConfigurationException("memtable_flush_writers must be at least 1");
-            }
-            else if (conf.memtable_flush_writers == null)
-            {
-                conf.memtable_flush_writers = conf.data_file_directories.length;
-            }
 
             /* Local IP or hostname to bind services to */
             if (conf.listen_address != null)
@@ -415,12 +409,15 @@ public class DatabaseDescriptor
             /* data file and commit log directories. they get created later, when they're needed. */
             if (conf.commitlog_directory != null && conf.data_file_directories != null && conf.saved_caches_directory != null)
             {
+                dataFileDirectories = new HashMap<String, Integer>(conf.data_file_directories.length);
                 for (String datadir : conf.data_file_directories)
                 {
                     if (datadir.equals(conf.commitlog_directory))
                         throw new ConfigurationException("commitlog_directory must not be the same as any data_file_directories");
                     if (datadir.equals(conf.saved_caches_directory))
                         throw new ConfigurationException("saved_caches_directory must not be the same as any data_file_directories");
+                    Pair<String, Integer> dirSetting = parseDataFileDirectory(datadir);
+                    dataFileDirectories.put(dirSetting.left, dirSetting.right);
                 }
 
                 if (conf.commitlog_directory.equals(conf.saved_caches_directory))
@@ -555,7 +552,7 @@ public class DatabaseDescriptor
 
     private static boolean hasExistingNoSystemTables()
     {
-        for (String dataDir : getAllDataFileLocations())
+        for (String dataDir : getAllDataFileLocations().keySet())
         {
             File dataPath = new File(dataDir);
             if (dataPath.exists() && dataPath.isDirectory())
@@ -608,7 +605,7 @@ public class DatabaseDescriptor
             {
                 throw new ConfigurationException("At least one DataFileDirectory must be specified");
             }
-            for ( String dataFileDirectory : conf.data_file_directories )
+            for (String dataFileDirectory : getAllDataFileLocations().keySet())
                 FileUtils.createDirectory(dataFileDirectory);
             if (conf.commitlog_directory == null)
             {
@@ -814,11 +811,6 @@ public class DatabaseDescriptor
         return conf.concurrent_replicates;
     }
 
-    public static int getFlushWriters()
-    {
-            return conf.memtable_flush_writers;
-    }
-
     public static int getInMemoryCompactionLimit()
     {
         return conf.in_memory_compaction_limit_in_mb * 1024 * 1024;
@@ -859,9 +851,12 @@ public class DatabaseDescriptor
         conf.stream_throughput_outbound_megabits_per_sec = value;
     }
 
-    public static String[] getAllDataFileLocations()
+    /**
+     * @return pairs of data directory and number of threads to assign
+     */
+    public static Map<String, Integer> getAllDataFileLocations()
     {
-        return conf.data_file_directories;
+        return dataFileDirectories;
     }
 
     public static String getCommitLogLocation()
@@ -1182,5 +1177,29 @@ public class DatabaseDescriptor
     public static Config.InternodeCompression internodeCompression()
     {
         return conf.internode_compression;
+    }
+
+    public static Pair<String, Integer> parseDataFileDirectory(String dataFileDirectory) throws ConfigurationException
+    {
+        int numThreads = 1; // # of threads is default to 1
+        int separatorIndex = dataFileDirectory.lastIndexOf(':');
+        if (separatorIndex < 0)
+            return new Pair<String, Integer>(dataFileDirectory, numThreads);
+
+        String dataDir = dataFileDirectory.substring(0, separatorIndex).trim();
+        try
+        {
+            numThreads = Integer.parseInt(dataFileDirectory.substring(separatorIndex + 1).trim());
+        }
+        catch (NumberFormatException e)
+        {
+            throw new ConfigurationException("invalid number of threads given: ", e);
+        }
+        if (dataDir.length() == 0)
+            throw new ConfigurationException("invalid data directory given: " + dataDir);
+        if (numThreads < 1)
+            throw new ConfigurationException("invalid number of threads given: " + numThreads);
+
+        return new Pair<String, Integer>(dataDir, numThreads);
     }
 }

@@ -17,8 +17,10 @@
  */
 package org.apache.cassandra.db;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -42,13 +44,14 @@ public class FlushWriter extends AbstractExecutorService
 
     public FlushWriter()
     {
-        perDiskTaskExecutors = new DiskBoundTaskExecutor[Directories.dataFileLocations.length];
-        for (int i = 0; i < Directories.dataFileLocations.length; i++)
+        perDiskTaskExecutors = new DiskBoundTaskExecutor[Directories.dataFileLocations.size()];
+        int i = 0;
+        for (Map.Entry<File, Integer> entry : Directories.dataFileLocations.entrySet())
         {
-            perDiskTaskExecutors[i] = new DiskBoundTaskExecutor(Directories.dataFileLocations[i],
-                                                                1,
+            perDiskTaskExecutors[i++] = new DiskBoundTaskExecutor(entry.getKey(),
+                                                                entry.getValue(),
                                                                 DatabaseDescriptor.getFlushQueueSize(),
-                                                                "FlushWriter-" + Directories.dataFileLocations[i]);
+                                                                "FlushWriter-" + entry.getKey());
         }
     }
 
@@ -98,11 +101,11 @@ public class FlushWriter extends AbstractExecutorService
                 executor = dir;
             }
         }
-        logger.debug(String.format("expected data files size is %d; largest free partition (%s) has %d bytes free",
-                                          expectedSize, executor.disk, maxFreeDisk));
-
         if (executor == null)
             throw new RuntimeException("Insufficient disk space to flush " + expectedSize + " bytes");
+
+        logger.debug(String.format("expected data files size is %d; largest free partition (%s) has %d bytes free",
+                                          expectedSize, executor.disk, maxFreeDisk));
 
         if (expectedSize < maxFreeDisk)
             executor.execute(task);

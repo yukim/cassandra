@@ -65,13 +65,12 @@ public class Directories
     public static final String SNAPSHOT_SUBDIR = "snapshots";
     public static final String SECONDARY_INDEX_NAME_SEPARATOR = ".";
 
-    public static final File[] dataFileLocations;
+    public static final Map<File, Integer> dataFileLocations;
     static
     {
-        String[] locations = DatabaseDescriptor.getAllDataFileLocations();
-        dataFileLocations = new File[locations.length];
-        for (int i = 0; i < locations.length; ++i)
-            dataFileLocations[i] = new File(locations[i]);
+        dataFileLocations = new HashMap<File, Integer>(DatabaseDescriptor.getAllDataFileLocations().size());
+        for (Map.Entry<String, Integer> entry : DatabaseDescriptor.getAllDataFileLocations().entrySet())
+            dataFileLocations.put(new File(entry.getKey()), entry.getValue());
     }
 
     private final String tablename;
@@ -92,9 +91,10 @@ public class Directories
     {
         this.tablename = tablename;
         this.cfname = cfname;
-        this.sstableDirectories = new File[dataFileLocations.length];
-        for (int i = 0; i < dataFileLocations.length; ++i)
-            sstableDirectories[i] = new File(dataFileLocations[i], join(tablename, directoryName));
+        this.sstableDirectories = new File[dataFileLocations.size()];
+        int i = 0;
+        for (File dataFileLocation : dataFileLocations.keySet())
+            sstableDirectories[i++] = new File(dataFileLocation, join(tablename, directoryName));
 
         if (!StorageService.instance.isClientMode())
         {
@@ -424,7 +424,7 @@ public class Directories
             return false;
 
         boolean hasSystemKeyspace = false;
-        for (File location : dataFileLocations)
+        for (File location : dataFileLocations.keySet())
         {
             File systemDir = new File(location, Table.SYSTEM_TABLE);
             hasSystemKeyspace |= (systemDir.exists() && systemDir.isDirectory());
@@ -440,7 +440,7 @@ public class Directories
         int longestLocation = -1;
         try
         {
-            for (File loc : dataFileLocations)
+            for (File loc : dataFileLocations.keySet())
                 longestLocation = Math.max(longestLocation, loc.getCanonicalPath().length());
         }
         catch (IOException e)
@@ -492,7 +492,7 @@ public class Directories
     {
         logger.info("Upgrade from pre-1.1 version detected: migrating sstables to new directory layout");
 
-        for (File location : dataFileLocations)
+        for (File location : dataFileLocations.keySet())
         {
             if (!location.exists() || !location.isDirectory())
                 continue;
@@ -575,15 +575,16 @@ public class Directories
     // Hack for tests, don't use otherwise
     static void overrideDataDirectoriesForTest(String loc)
     {
-        for (int i = 0; i < dataFileLocations.length; ++i)
-            dataFileLocations[i] = new File(loc);
+        int size = dataFileLocations.size();
+        dataFileLocations.clear();
+        for (int i = 0; i < size; ++i)
+            dataFileLocations.put(new File(loc), 1);
     }
 
     // Hack for tests, don't use otherwise
     static void resetDataDirectoriesAfterTest()
     {
-        String[] locations = DatabaseDescriptor.getAllDataFileLocations();
-        for (int i = 0; i < locations.length; ++i)
-            dataFileLocations[i] = new File(locations[i]);
+        for (Map.Entry<String, Integer> entry : DatabaseDescriptor.getAllDataFileLocations().entrySet())
+            dataFileLocations.put(new File(entry.getKey()), entry.getValue());
     }
 }

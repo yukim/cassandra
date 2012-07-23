@@ -23,10 +23,13 @@ import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.thrift.InvalidRequestException;
+import org.apache.cassandra.utils.Pair;
 
 import org.junit.Test;
 
 import java.io.IOException;
+
+import static org.junit.Assert.fail;
 
 public class DatabaseDescriptorTest
 {
@@ -91,6 +94,62 @@ public class DatabaseDescriptorTest
         finally
         {
             Gossiper.instance.stop();
+        }
+    }
+
+    @Test
+    public void testParsingDataFileDirectories() throws ConfigurationException
+    {
+        Pair<String, Integer> dir = DatabaseDescriptor.parseDataFileDirectory("/var/lib/cassandra/data");
+        assert "/var/lib/cassandra/data".equals(dir.left);
+        assert dir.right == 1 : "should have default value of 1";
+
+        dir = DatabaseDescriptor.parseDataFileDirectory("/var/lib/cassandra/data:2");
+        assert "/var/lib/cassandra/data".equals(dir.left);
+        assert dir.right == 2;
+
+        dir = DatabaseDescriptor.parseDataFileDirectory("/var/lib/cassandra/data: 3");
+        assert "/var/lib/cassandra/data".equals(dir.left);
+        assert dir.right == 3;
+
+        dir = DatabaseDescriptor.parseDataFileDirectory("/var/lib/cassandra/data :4 ");
+        assert "/var/lib/cassandra/data".equals(dir.left);
+        assert dir.right == 4;
+
+        // work on windows?
+        dir = DatabaseDescriptor.parseDataFileDirectory("C:\\data\\cassandra: 5");
+        assert "C:\\data\\cassandra".equals(dir.left);
+        assert dir.right == 5;
+
+        try
+        {
+            // no data dir specified
+            DatabaseDescriptor.parseDataFileDirectory(":1");
+            fail();
+        }
+        catch (ConfigurationException e)
+        {
+            // should be an error
+        }
+        try
+        {
+            // invalid number of thread (less than 1)
+            DatabaseDescriptor.parseDataFileDirectory("/var/lib/cassandra:0");
+            fail();
+        }
+        catch (ConfigurationException e)
+        {
+            // should be an error
+        }
+        try
+        {
+            // invalid number of thread (not a number)
+            DatabaseDescriptor.parseDataFileDirectory("/var/lib/cassandra:a");
+            fail();
+        }
+        catch (ConfigurationException e)
+        {
+            // should be an error
         }
     }
 }

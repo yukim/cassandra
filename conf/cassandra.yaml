@@ -83,9 +83,22 @@ authority: org.apache.cassandra.auth.AllowAllAuthority
 # partitioners and token selection.
 partitioner: org.apache.cassandra.dht.RandomPartitioner
 
-# directories where Cassandra should store data on disk.
+# Directories where Cassandra should store data on disk, followed by number of
+# flush writers to work on(':1' indicates 1 thread).
+# Threads will be blocked by disk io, and each one will hold a memtable in
+# memory while blocked. If you have a large heap and many data directories,
+# you can increase this value for better flush performance.
+#
+# For example, setting
+#
+# data_file_directories:
+#   - /mnt/c1/data:1
+#   - /mnt/c2/data:3
+#
+# tells Cassandra to use 1 thread on /mnt/c1/data and 3 on /mnt/c2/data.
+# If number of threads is omitted, default value is set to 1.
 data_file_directories:
-    - /var/lib/cassandra/data
+    - /var/lib/cassandra/data:1
 
 # commit log
 commitlog_directory: /var/lib/cassandra/commitlog
@@ -249,13 +262,6 @@ concurrent_writes: 32
 # segment and remove it.  So a small total commitlog space will tend
 # to cause more flush activity on less-active columnfamilies.
 # commitlog_total_space_in_mb: 4096
-
-# This sets the amount of memtable flush writer threads.  These will
-# be blocked by disk io, and each one will hold a memtable in memory
-# while blocked. If you have a large heap and many data directories,
-# you can increase this value for better flush performance.
-# By default this will be set to the amount of data directories defined.
-#memtable_flush_writers: 1
 
 # the number of full memtables to allow pending flush, that is,
 # waiting for a writer thread.  At a minimum, this should be set to

@@ -58,7 +58,7 @@ public class Config
     public Integer concurrent_writes = 32;
     public Integer concurrent_replicates = 32;
 
-    public Integer memtable_flush_writers = null; // will get set to the length of data dirs in DatabaseDescriptor
+    @Deprecated public Integer memtable_flush_writers = null; // replaced by per-disk threads setting in data_file_directories
     public Integer memtable_total_space_in_mb;
 
     public Integer storage_port = 7000;

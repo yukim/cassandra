@@ -50,7 +50,7 @@ class MeteredFlusher implements Runnable
                 long size = cfs.getTotalMemtableLiveSize();
                 int maxInFlight = (int) Math.ceil((double) (1 // live memtable
                                                             + 1 // potentially a flushed memtable being counted by jamm
-                                                            + DatabaseDescriptor.getFlushWriters()
+                                                            + Directories.dataFileLocations.size()
                                                             + DatabaseDescriptor.getFlushQueueSize())
                                                   / (1 + cfs.indexManager.getIndexedColumns().size()));
                 if (size > (DatabaseDescriptor.getTotalMemtableSpaceInMB() * 1048576L - flushingBytes) / maxInFlight)

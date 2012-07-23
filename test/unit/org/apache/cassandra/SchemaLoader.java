@@ -371,7 +371,7 @@ public class SchemaLoader
         cleanupSavedCaches();
 
         // clean up data directory which are stored as data directory/table/data files
-        for (String dirName : DatabaseDescriptor.getAllDataFileLocations())
+        for (String dirName : DatabaseDescriptor.getAllDataFileLocations().keySet())
         {
             File dir = new File(dirName);
             if (!dir.exists())

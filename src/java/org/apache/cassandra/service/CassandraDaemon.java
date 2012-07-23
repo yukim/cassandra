@@ -139,9 +139,9 @@ public class CassandraDaemon
         });
 
         // check all directories(data, commitlog, saved cache) for existence and permission
-        Iterable<String> dirs = Iterables.concat(Arrays.asList(DatabaseDescriptor.getAllDataFileLocations()),
-                                                 Arrays.asList(new String[] {DatabaseDescriptor.getCommitLogLocation(),
-                                                                             DatabaseDescriptor.getSavedCachesLocation()}));
+        Iterable<String> dirs = Iterables.concat(DatabaseDescriptor.getAllDataFileLocations().keySet(),
+                                                 Arrays.asList(DatabaseDescriptor.getCommitLogLocation(),
+                                                               DatabaseDescriptor.getSavedCachesLocation()));
         for (String dataDir : dirs)
         {
             logger.debug("Checking directory {}", dataDir);
