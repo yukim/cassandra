@@ -18,7 +18,6 @@
 package org.apache.cassandra.db.compaction;
 
 import java.io.File;
-import java.io.IOError;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
@@ -26,9 +25,14 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
+
+import com.google.common.base.Predicates;
+import com.google.common.collect.Iterators;
+import com.google.common.primitives.Longs;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cache.AutoSavingCache;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
@@ -45,16 +49,9 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.service.AntiEntropyService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.google.common.base.Predicates;
-import com.google.common.collect.Iterators;
-import com.google.common.primitives.Longs;
 
 /**
  * A singleton which manages a private executor of ongoing compactions. A readwrite lock
@@ -120,7 +117,7 @@ public class CompactionManager implements CompactionManagerMBean
                                    cfs.getCompactionStrategy().getClass().getSimpleName()});
         Runnable runnable = new WrappedRunnable()
         {
-            protected void runMayThrow() throws IOException
+            protected void runMayThrow() throws Exception
             {
                 compactionLock.readLock().lock();
                 try
@@ -147,7 +144,8 @@ public class CompactionManager implements CompactionManagerMBean
 
                     try
                     {
-                        task.execute(executor);
+                        task.setCollector(executor);
+                        DiskWriter.instance.submit(task).get();
                     }
                     finally
                     {
@@ -166,14 +164,14 @@ public class CompactionManager implements CompactionManagerMBean
 
     private static interface AllSSTablesOperation
     {
-        public void perform(ColumnFamilyStore store, Collection<SSTableReader> sstables) throws IOException;
+        public void perform(ColumnFamilyStore store, Collection<SSTableReader> sstables) throws Exception;
     }
 
     private void performAllSSTableOperation(final ColumnFamilyStore cfStore, final AllSSTablesOperation operation) throws InterruptedException, ExecutionException
     {
         Callable<Object> runnable = new Callable<Object>()
         {
-            public Object call() throws IOException
+            public Object call() throws Exception
             {
                 compactionLock.writeLock().lock();
                 try
@@ -227,7 +225,7 @@ public class CompactionManager implements CompactionManagerMBean
     {
         performAllSSTableOperation(cfStore, new AllSSTablesOperation()
         {
-            public void perform(ColumnFamilyStore cfs, Collection<SSTableReader> sstables) throws IOException
+            public void perform(ColumnFamilyStore cfs, Collection<SSTableReader> sstables) throws Exception
             {
                 assert !cfs.isIndex();
                 for (final SSTableReader sstable : sstables)
@@ -237,7 +235,8 @@ public class CompactionManager implements CompactionManagerMBean
                     CompactionTask task = new CompactionTask(cfs, Collections.singletonList(sstable), Integer.MAX_VALUE);
                     task.isUserDefined(true);
                     task.setCompactionType(OperationType.UPGRADE_SSTABLES);
-                    task.execute(executor);
+                    task.setCollector(executor);
+                    DiskWriter.instance.submit(task).get();
                 }
             }
         });
@@ -274,7 +273,7 @@ public class CompactionManager implements CompactionManagerMBean
     {
         Runnable runnable = new WrappedRunnable()
         {
-            protected void runMayThrow() throws IOException
+            protected void runMayThrow() throws Exception
             {
                 // acquire the write lock long enough to schedule all sstables
                 compactionLock.writeLock().lock();
@@ -292,7 +291,8 @@ public class CompactionManager implements CompactionManagerMBean
                         compactionLock.writeLock().unlock();
                         try
                         {
-                            task.execute(executor);
+                            task.setCollector(executor);
+                            DiskWriter.instance.submit(task).get();
                         }
                         finally
                         {
@@ -352,7 +352,7 @@ public class CompactionManager implements CompactionManagerMBean
     {
         Runnable runnable = new WrappedRunnable()
         {
-            protected void runMayThrow() throws IOException
+            protected void runMayThrow() throws Exception
             {
                 compactionLock.readLock().lock();
                 try
@@ -389,7 +389,8 @@ public class CompactionManager implements CompactionManagerMBean
                             {
                                 AbstractCompactionStrategy strategy = cfs.getCompactionStrategy();
                                 AbstractCompactionTask task = strategy.getUserDefinedTask(toCompact, gcBefore);
-                                task.execute(executor);
+                                task.setCollector(executor);
+                                DiskWriter.instance.submit(task).get();
                             }
                             finally
                             {

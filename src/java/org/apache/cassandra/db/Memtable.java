@@ -25,6 +25,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.base.Function;
+import org.cliffc.high_scale_lib.NonBlockingHashSet;
+import org.github.jamm.MemoryMeter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,9 +44,6 @@ import org.apache.cassandra.io.sstable.SSTableWriter;
 import org.apache.cassandra.io.util.DiskBoundTask;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.SlabAllocator;
-
-import org.cliffc.high_scale_lib.NonBlockingHashSet;
-import org.github.jamm.MemoryMeter;
 
 public class Memtable
 {
@@ -257,9 +256,9 @@ public class Memtable
         return builder.toString();
     }
 
-    public void flushAndSignal(final CountDownLatch latch, ExecutorService writer, final Future<ReplayPosition> context)
+    public void flushAndSignal(final CountDownLatch latch, final Future<ReplayPosition> context)
     {
-        writer.execute(new SSTableFlushTask(latch, context));
+        DiskWriter.instance.execute(new SSTableFlushTask(latch, context));
     }
 
     public String toString()

@@ -40,5 +40,17 @@ public abstract class DiskBoundTask extends WrappedRunnable
         this.currentDisk = disk;
     }
 
+    /**
+     * Get expected write size to determine which disk to use for this task.
+     * @return expected size in bytes this task will write to disk.
+     */
     public abstract long getExpectedWriteSize();
+
+    /**
+     * @return true if calculate expected write size again.
+     */
+    public boolean recalculateWriteSize()
+    {
+        return false;
+    }
 }

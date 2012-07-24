@@ -18,9 +18,12 @@
 package org.apache.cassandra.io.util;
 
 import java.io.File;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+import com.google.common.primitives.Longs;
 
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
@@ -29,7 +32,7 @@ import org.apache.cassandra.concurrent.StageManager;
 /**
  * Disk bound I/O task executor.
  */
-public class DiskBoundTaskExecutor extends JMXEnabledThreadPoolExecutor
+public class DiskBoundTaskExecutor extends JMXEnabledThreadPoolExecutor implements Comparable<DiskBoundTaskExecutor>
 {
     public final File disk;
 
@@ -43,6 +46,17 @@ public class DiskBoundTaskExecutor extends JMXEnabledThreadPoolExecutor
               "internal");
 
         this.disk = disk;
+    }
+
+    public Future<?> submit(Runnable command)
+    {
+        if (command instanceof DiskBoundTask)
+        {
+            DiskBoundTask task = (DiskBoundTask) command;
+            estimatedWorkingSize.addAndGet(task.getExpectedWriteSize());
+            task.bind(disk);
+        }
+        return super.submit(command);
     }
 
     public void execute(Runnable command)
@@ -64,6 +78,11 @@ public class DiskBoundTaskExecutor extends JMXEnabledThreadPoolExecutor
     {
         // Load factor of 0.9 we do not want to use the entire disk that is too risky.
         return (long)(0.9 * disk.getUsableSpace()) - estimatedWorkingSize.get();
+    }
+
+    public int compareTo(DiskBoundTaskExecutor o)
+    {
+        return Longs.compare(getEstimatedAvailableSpace(), o.getEstimatedAvailableSpace());
     }
 
     protected void afterExecute(Runnable r, Throwable t)

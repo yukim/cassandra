@@ -39,11 +39,11 @@ public class LeveledCompactionTask extends CompactionTask
     }
 
     @Override
-    public int execute(CompactionManager.CompactionExecutorStatsCollector collector) throws IOException
+    protected void runMayThrow() throws Exception
     {
         try
         {
-            return super.execute(collector);
+            super.runMayThrow();
         }
         finally
         {

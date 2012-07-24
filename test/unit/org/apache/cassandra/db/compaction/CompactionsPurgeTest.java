@@ -26,13 +26,7 @@ import java.util.concurrent.ExecutionException;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.db.IColumn;
-import org.apache.cassandra.db.Table;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.RowMutation;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.SuperColumn;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -135,7 +129,7 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm.add(new QueryPath(cfName, null, ByteBufferUtil.bytes(String.valueOf(5))), ByteBufferUtil.EMPTY_BYTE_BUFFER, 2);
         rm.apply();
         cfs.forceBlockingFlush();
-        new CompactionTask(cfs, sstablesIncomplete, Integer.MAX_VALUE).execute(null);
+        DiskWriter.instance.submit(new CompactionTask(cfs, sstablesIncomplete, Integer.MAX_VALUE)).get();
 
         // verify that minor compaction does not GC when key is present
         // in a non-compacted sstable

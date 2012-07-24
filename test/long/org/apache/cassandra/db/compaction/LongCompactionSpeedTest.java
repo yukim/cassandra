@@ -91,7 +91,7 @@ public class LongCompactionSpeedTest extends SchemaLoader
 
         long start = System.currentTimeMillis();
         final int gcBefore = (int) (System.currentTimeMillis() / 1000) - Schema.instance.getCFMetaData(TABLE1, "Standard1").getGcGraceSeconds();
-        new CompactionTask(store, sstables, gcBefore).execute(null);
+        DiskWriter.instance.submit(new CompactionTask(store, sstables, gcBefore)).get();
         System.out.println(String.format("%s: sstables=%d rowsper=%d colsper=%d: %d ms",
                                          this.getClass().getName(),
                                          sstableCount,
