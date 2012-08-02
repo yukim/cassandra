@@ -28,12 +28,14 @@ public class InstrumentingCache<K, V>
 {
     private volatile boolean capacitySetManually;
     private final ICache<K, V> map;
+    private final String type;
 
-    public final CacheMetrics metrics;
+    private CacheMetrics metrics;
 
     public InstrumentingCache(String type, ICache<K, V> map)
     {
         this.map = map;
+        this.type = type;
         this.metrics = new CacheMetrics(type, map);
     }
 
@@ -55,9 +57,9 @@ public class InstrumentingCache<K, V>
     public V get(K key)
     {
         V v = map.get(key);
-        metrics.requests.inc();
+        metrics.requests.mark();
         if (v != null)
-            metrics.hits.inc();
+            metrics.hits.mark();
         return v;
     }
 
@@ -105,8 +107,7 @@ public class InstrumentingCache<K, V>
     public void clear()
     {
         map.clear();
-        metrics.requests.clear();
-        metrics.hits.clear();
+        metrics = new CacheMetrics(type, map);
     }
 
     public Set<K> getKeySet()
@@ -127,5 +128,10 @@ public class InstrumentingCache<K, V>
     public boolean isPutCopying()
     {
         return map.isPutCopying();
+    }
+
+    public CacheMetrics getMetrics()
+    {
+        return metrics;
     }
 }

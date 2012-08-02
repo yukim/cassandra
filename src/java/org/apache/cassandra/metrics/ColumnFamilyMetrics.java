@@ -20,6 +20,7 @@ package org.apache.cassandra.metrics;
 import com.yammer.metrics.Metrics;
 import com.yammer.metrics.core.Counter;
 import com.yammer.metrics.core.Gauge;
+import com.yammer.metrics.core.Histogram;
 import com.yammer.metrics.core.MetricName;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -44,10 +45,8 @@ public class ColumnFamilyMetrics
     public final Gauge<long[]> estimatedRowSizeHistogram;
     /** Histogram of estimated number of columns. */
     public final Gauge<long[]> estimatedColumnCountHistogram;
-    /** Histogram of the number of sstable data files accessed per read: reading this property resets it */
-    public final Gauge<long[]> recentSSTablesPerReadHistogram;
     /** Histogram of the number of sstable data files accessed per read */
-    public final Gauge<long[]> sstablesPerReadHistogram;
+    public final Histogram sstablesPerReadHistogram;
     /** Read metrics */
     public final LatencyMetrics readLatency;
     /** Write metrics */
@@ -79,8 +78,9 @@ public class ColumnFamilyMetrics
 
     private final MetricNameFactory factory;
 
-    private final EstimatedHistogram sstablesPerRead = new EstimatedHistogram(35);
-    private final EstimatedHistogram recentSSTablesPerRead = new EstimatedHistogram(35);
+    // for backward compatibility
+    @Deprecated public final EstimatedHistogram sstablesPerRead = new EstimatedHistogram(35);
+    @Deprecated public final EstimatedHistogram recentSSTablesPerRead = new EstimatedHistogram(35);
 
     /**
      * Creates metrics for given {@link ColumnFamilyStore}.
@@ -134,20 +134,7 @@ public class ColumnFamilyMetrics
                 return histogram;
             }
         });
-        recentSSTablesPerReadHistogram = Metrics.newGauge(factory.createMetricName("RecentSSTablesPerReadHistogram"), new Gauge<long[]>()
-        {
-            public long[] value()
-            {
-                return recentSSTablesPerRead.getBuckets(true);
-            }
-        });
-        sstablesPerReadHistogram = Metrics.newGauge(factory.createMetricName("SSTablesPerReadHistogram"), new Gauge<long[]>()
-        {
-            public long[] value()
-            {
-                return sstablesPerRead.getBuckets(false);
-            }
-        });
+        sstablesPerReadHistogram = Metrics.newHistogram(factory.createMetricName("SSTablesPerReadHistogram"));
         compressionRatio = Metrics.newGauge(factory.createMetricName("CompressionRatio"), new Gauge<Double>()
         {
             public Double value()
@@ -290,6 +277,7 @@ public class ColumnFamilyMetrics
 
     public void updateSSTableIterated(int count)
     {
+        sstablesPerReadHistogram.update(count);
         recentSSTablesPerRead.add(count);
         sstablesPerRead.add(count);
     }
@@ -307,7 +295,6 @@ public class ColumnFamilyMetrics
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("CompressionRatio"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("EstimatedRowSizeHistogram"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("EstimatedColumnCountHistogram"));
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RecentSSTablesPerReadHistogram"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("SSTablesPerReadHistogram"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("PendingTasks"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("LiveSSTableCount"));

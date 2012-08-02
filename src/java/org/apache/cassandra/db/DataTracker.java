@@ -30,6 +30,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.metrics.StorageMetrics;
 import org.apache.cassandra.notifications.INotification;
 import org.apache.cassandra.notifications.INotificationConsumer;
 import org.apache.cassandra.notifications.SSTableAddedNotification;
@@ -329,6 +330,7 @@ public class DataTracker
                 logger.debug(String.format("adding %s to list of files tracked for %s.%s",
                             sstable.descriptor, cfstore.table.name, cfstore.getColumnFamilyName()));
             long size = sstable.bytesOnDisk();
+            StorageMetrics.load.inc(size);
             cfstore.metric.liveDiskSpaceUsed.inc(size);
             cfstore.metric.totalDiskSpaceUsed.inc(size);
             sstable.setTrackedBy(this);
@@ -342,7 +344,9 @@ public class DataTracker
             if (logger.isDebugEnabled())
                 logger.debug(String.format("removing %s from list of files tracked for %s.%s",
                             sstable.descriptor, cfstore.table.name, cfstore.getColumnFamilyName()));
-            cfstore.metric.liveDiskSpaceUsed.dec(sstable.bytesOnDisk());
+            long size = sstable.bytesOnDisk();
+            StorageMetrics.load.dec(size);
+            cfstore.metric.liveDiskSpaceUsed.dec(size);
             boolean firstToCompact = sstable.markCompacted();
             assert firstToCompact : sstable + " was already marked compacted";
             sstable.releaseReference();

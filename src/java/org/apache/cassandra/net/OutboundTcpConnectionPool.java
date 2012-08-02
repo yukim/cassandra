@@ -98,17 +98,17 @@ public class OutboundTcpConnectionPool
 
     public long getTimeouts()
     {
-       return metrics.timeout.count();
+       return metrics.timeouts.count();
     }
 
     public long getRecentTimeouts()
     {
-        return metrics.recentTimeout.value();
+        return metrics.getRecentTimeout();
     }
 
     public void incrementTimeout()
     {
-        metrics.timeout.inc();
+        metrics.timeouts.mark();
     }
 
     public Socket newSocket() throws IOException

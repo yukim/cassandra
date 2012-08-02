@@ -17,44 +17,14 @@
  */
 package org.apache.cassandra.metrics;
 
-import java.util.SortedMap;
-
 import com.yammer.metrics.Metrics;
-import com.yammer.metrics.core.Gauge;
-import com.yammer.metrics.core.Metric;
+import com.yammer.metrics.core.Counter;
 import com.yammer.metrics.core.MetricName;
-import com.yammer.metrics.core.MetricPredicate;
 
 /**
  * Metrics related to Storage.
  */
 public class StorageMetrics
 {
-    public final Gauge<Double> load;
-
-    public StorageMetrics()
-    {
-        this.load = Metrics.newGauge(new MetricName("org.apache.cassandra.metrics", "Storage", "Load"), new Gauge<Double>()
-        {
-            public Double value()
-            {
-                double bytes = 0;
-                // find all column family LiveDiscSpaceUsed metrics
-                SortedMap<String, SortedMap<MetricName, Metric>> columnFamilyMetrics = Metrics.defaultRegistry().groupedMetrics(new MetricPredicate()
-                {
-                    public boolean matches(MetricName metricName, Metric metric)
-                    {
-                        return "org.apache.cassandra.metrics.ColumnFamilies".equals(metricName.getGroup())
-                                       && "LiveDiskSpaceUsed".equals(metricName.getName());
-                    }
-                });
-                for (SortedMap<MetricName, Metric> metrics : columnFamilyMetrics.values())
-                {
-                    for (Metric liveDiskSpaceUsed : metrics.values())
-                        bytes += ((Gauge<Long>) liveDiskSpaceUsed).value();
-                }
-                return bytes;
-            }
-        });
-    }
+    public static final Counter load = Metrics.newCounter(new MetricName("org.apache.cassandra.metrics", "Storage", "Load"));
 }

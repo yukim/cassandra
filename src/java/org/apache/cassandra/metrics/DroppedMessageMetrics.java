@@ -17,9 +17,10 @@
  */
 package org.apache.cassandra.metrics;
 
+import java.util.concurrent.TimeUnit;
+
 import com.yammer.metrics.Metrics;
-import com.yammer.metrics.core.Counter;
-import com.yammer.metrics.core.Gauge;
+import com.yammer.metrics.core.Meter;
 import com.yammer.metrics.core.MetricName;
 
 import org.apache.cassandra.net.MessagingService;
@@ -33,24 +34,21 @@ public class DroppedMessageMetrics
     public static final String TYPE_NAME = "DroppedMessage";
 
     /** Number of dropped messages */
-    public final Counter dropped;
-    /** Number of dropped messages since last read */
-    public final Gauge<Long> recentlyDropped;
+    public final Meter dropped;
 
     private long lastDropped = 0;
 
     public DroppedMessageMetrics(MessagingService.Verb verb)
     {
-        dropped = Metrics.newCounter(new MetricName(GROUP_NAME, TYPE_NAME, "Dropped", verb.toString()));
-        recentlyDropped = Metrics.newGauge(new MetricName(GROUP_NAME, TYPE_NAME, "RecentlyDropped", verb.toString()), new Gauge<Long>()
-        {
-            public Long value()
-            {
-                long currentDropped = dropped.count();
-                long recentlyDropped = currentDropped- lastDropped;
-                lastDropped = currentDropped;
-                return recentlyDropped;
-            }
-        });
+        dropped = Metrics.newMeter(new MetricName(GROUP_NAME, TYPE_NAME, "Dropped", verb.toString()), "dropped", TimeUnit.SECONDS);
+    }
+
+    @Deprecated
+    public int getRecentlyDropped()
+    {
+        long currentDropped = dropped.count();
+        long recentlyDropped = currentDropped - lastDropped;
+        lastDropped = currentDropped;
+        return (int)recentlyDropped;
     }
 }

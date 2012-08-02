@@ -18,10 +18,11 @@
 package org.apache.cassandra.metrics;
 
 import java.net.InetAddress;
+import java.util.concurrent.TimeUnit;
 
 import com.yammer.metrics.Metrics;
-import com.yammer.metrics.core.Counter;
 import com.yammer.metrics.core.Gauge;
+import com.yammer.metrics.core.Meter;
 import com.yammer.metrics.core.MetricName;
 
 import org.apache.cassandra.net.OutboundTcpConnectionPool;
@@ -35,18 +36,7 @@ public class ConnectionMetrics
     public static final String TYPE_NAME = "Connection";
 
     /** Total number of timeouts happened on this node */
-    public static final Counter totalTimeouts = Metrics.newCounter(new MetricName(GROUP_NAME, TYPE_NAME, "TotalTimeouts"));
-    /** Number of timeouts since last check. */
-    public static final Gauge<Long> recentTotalTimeouts = Metrics.newGauge(new MetricName(GROUP_NAME, TYPE_NAME, "RecentTotalTimeouts"), new Gauge<Long>()
-    {
-        public Long value()
-        {
-            long total = totalTimeouts.count();
-            long recent = total - recentTimeouts;
-            recentTimeouts = total;
-            return recent;
-        }
-    });
+    public static final Meter totalTimeouts = Metrics.newMeter(new MetricName(GROUP_NAME, TYPE_NAME, "TotalTimeouts"), "total timeouts", TimeUnit.SECONDS);
     private static long recentTimeouts;
 
     public final String address;
@@ -61,9 +51,7 @@ public class ConnectionMetrics
     /** Completed tasks for Response(GOSSIP & RESPONSE) TCP Connections */
     public final Gauge<Long> responseCompletedTasks;
     /** Number of timeouts for specific IP */
-    public final Counter timeout;
-    /** Number of timeouts for specific IP since last check. */
-    public final Gauge<Long> recentTimeout;
+    public final Meter timeouts;
 
     private long recentTimeoutCount;
 
@@ -111,17 +99,7 @@ public class ConnectionMetrics
                 return connectionPool.ackCon.getCompletedMesssages();
             }
         });
-        timeout = Metrics.newCounter(new MetricName(GROUP_NAME, TYPE_NAME, "Timeout", address));
-        recentTimeout = Metrics.newGauge(new MetricName(GROUP_NAME, TYPE_NAME, "RecentTimeout", address), new Gauge<Long>()
-        {
-            public Long value()
-            {
-                long timeoutCount = timeout.count();
-                long recent = timeoutCount - recentTimeoutCount;
-                recentTimeoutCount = timeoutCount;
-                return recent;
-            }
-        });
+        timeouts = Metrics.newMeter(new MetricName(GROUP_NAME, TYPE_NAME, "Timeouts", address), "timeouts", TimeUnit.SECONDS);
     }
 
     public void release()
@@ -131,7 +109,24 @@ public class ConnectionMetrics
         Metrics.defaultRegistry().removeMetric(new MetricName(GROUP_NAME, TYPE_NAME, "CommandDroppedTasks", address));
         Metrics.defaultRegistry().removeMetric(new MetricName(GROUP_NAME, TYPE_NAME, "ResponsePendingTasks", address));
         Metrics.defaultRegistry().removeMetric(new MetricName(GROUP_NAME, TYPE_NAME, "ResponseCompletedTasks", address));
-        Metrics.defaultRegistry().removeMetric(new MetricName(GROUP_NAME, TYPE_NAME, "Timeout", address));
-        Metrics.defaultRegistry().removeMetric(new MetricName(GROUP_NAME, TYPE_NAME, "RecentTimeout", address));
+        Metrics.defaultRegistry().removeMetric(new MetricName(GROUP_NAME, TYPE_NAME, "Timeouts", address));
+    }
+
+    @Deprecated
+    public static long getRecentTotalTimeout()
+    {
+        long total = totalTimeouts.count();
+        long recent = total - recentTimeouts;
+        recentTimeouts = total;
+        return recent;
+    }
+
+    @Deprecated
+    public long getRecentTimeout()
+    {
+        long timeoutCount = timeouts.count();
+        long recent = timeoutCount - recentTimeoutCount;
+        recentTimeoutCount = timeoutCount;
+        return recent;
     }
 }

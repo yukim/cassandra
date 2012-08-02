@@ -252,7 +252,6 @@ public final class MessagingService implements MessagingServiceMBean
      * is not going to be a thread per node - but rather an instance per node. That's totally fine.
      */
     private final ConcurrentMap<InetAddress, DebuggableThreadPoolExecutor> streamExecutors = new NonBlockingHashMap<InetAddress, DebuggableThreadPoolExecutor>();
-    private final AtomicInteger activeStreamsOutbound = new AtomicInteger(0);
 
     private final NonBlockingHashMap<InetAddress, OutboundTcpConnectionPool> connectionManagers = new NonBlockingHashMap<InetAddress, OutboundTcpConnectionPool>();
 
@@ -318,7 +317,7 @@ public final class MessagingService implements MessagingServiceMBean
             {
                 CallbackInfo expiredCallbackInfo = pair.right.value;
                 maybeAddLatency(expiredCallbackInfo.callback, expiredCallbackInfo.target, pair.right.timeout);
-                ConnectionMetrics.totalTimeouts.inc();
+                ConnectionMetrics.totalTimeouts.mark();
                 getConnectionPool(expiredCallbackInfo.target).incrementTimeout();
 
                 if (expiredCallbackInfo.shouldHint())
@@ -592,22 +591,6 @@ public final class MessagingService implements MessagingServiceMBean
                                  : new CompressedFileStreamTask(header, to));
     }
 
-    public void incrementActiveStreamsOutbound()
-    {
-        activeStreamsOutbound.incrementAndGet();
-    }
-
-    public void decrementActiveStreamsOutbound()
-    {
-        activeStreamsOutbound.decrementAndGet();
-    }
-
-    /** The count of active outbound stream tasks. */
-    public int getActiveStreamsOutbound()
-    {
-        return activeStreamsOutbound.get();
-    }
-
     public void register(ILatencySubscriber subcriber)
     {
         subscribers.add(subcriber);
@@ -783,7 +766,7 @@ public final class MessagingService implements MessagingServiceMBean
     public void incrementDroppedMessages(Verb verb)
     {
         assert DROPPABLE_VERBS.contains(verb) : "Verb " + verb + " should not legally be dropped";
-        droppedMessages.get(verb).dropped.inc();
+        droppedMessages.get(verb).dropped.mark();
     }
 
     private void logDroppedMessages()
@@ -903,7 +886,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         Map<String, Integer> map = new HashMap<String, Integer>();
         for (Map.Entry<Verb, DroppedMessageMetrics> entry : droppedMessages.entrySet())
-            map.put(entry.getKey().toString(), entry.getValue().recentlyDropped.value().intValue());
+            map.put(entry.getKey().toString(), entry.getValue().getRecentlyDropped());
         return map;
     }
 
@@ -914,7 +897,7 @@ public final class MessagingService implements MessagingServiceMBean
 
     public long getRecentTotalTimouts()
     {
-        return ConnectionMetrics.recentTotalTimeouts.value();
+        return ConnectionMetrics.getRecentTotalTimeout();
     }
 
     public Map<String, Long> getTimeoutsPerHost()

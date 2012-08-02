@@ -733,7 +733,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         while (true)
         {
             long last = liveRatioComputedAt.get();
-            long operations = metric.writeLatency.opCount.count();
+            long operations = metric.writeLatency.latency.count();
             if (operations < 2 * last)
                 break;
             if (liveRatioComputedAt.compareAndSet(last, operations))
@@ -1013,37 +1013,37 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public long[] getRecentSSTablesPerReadHistogram()
     {
-        return metric.recentSSTablesPerReadHistogram.value();
+        return metric.recentSSTablesPerRead.getBuckets(true);
     }
 
     public long[] getSSTablesPerReadHistogram()
     {
-        return metric.sstablesPerReadHistogram.value();
+        return metric.sstablesPerRead.getBuckets(false);
     }
 
     public long getReadCount()
     {
-        return metric.readLatency.opCount.count();
+        return metric.readLatency.latency.count();
     }
 
     public double getRecentReadLatencyMicros()
     {
-        return metric.readLatency.recentLatencyMicro.value();
+        return metric.readLatency.getRecentLatency();
     }
 
     public long[] getLifetimeReadLatencyHistogramMicros()
     {
-        return metric.readLatency.totalLatencyHistogramMicro.value();
+        return metric.readLatency.totalLatencyHistogram.getBuckets(false);
     }
 
     public long[] getRecentReadLatencyHistogramMicros()
     {
-        return metric.readLatency.recentLatencyHistogramMicro.value();
+        return metric.readLatency.recentLatencyHistogram.getBuckets(true);
     }
 
     public long getTotalReadLatencyMicros()
     {
-        return metric.readLatency.totalLatencyMicro.count();
+        return metric.readLatency.totalLatency.count();
     }
 
     public int getPendingTasks()
@@ -1053,27 +1053,27 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public long getWriteCount()
     {
-        return metric.writeLatency.opCount.count();
+        return metric.writeLatency.latency.count();
     }
 
     public long getTotalWriteLatencyMicros()
     {
-        return metric.writeLatency.totalLatencyMicro.count();
+        return metric.writeLatency.totalLatency.count();
     }
 
     public double getRecentWriteLatencyMicros()
     {
-        return metric.writeLatency.recentLatencyMicro.value();
+        return metric.writeLatency.getRecentLatency();
     }
 
     public long[] getLifetimeWriteLatencyHistogramMicros()
     {
-        return metric.writeLatency.totalLatencyHistogramMicro.value();
+        return metric.writeLatency.totalLatencyHistogram.getBuckets(false);
     }
 
     public long[] getRecentWriteLatencyHistogramMicros()
     {
-        return metric.writeLatency.recentLatencyHistogramMicro.value();
+        return metric.writeLatency.recentLatencyHistogram.getBuckets(true);
     }
 
     public ColumnFamily getColumnFamily(DecoratedKey key, QueryPath path, ByteBuffer start, ByteBuffer finish, boolean reversed, int limit)

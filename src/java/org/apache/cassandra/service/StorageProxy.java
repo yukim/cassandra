@@ -199,7 +199,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         catch (TimedOutException ex)
         {
-            writeMetrics.timeouts.inc();
+            writeMetrics.timeouts.mark();
             ClientRequestMetrics.writeTimeouts.inc();
             if (logger.isDebugEnabled())
             {
@@ -212,7 +212,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         catch (UnavailableException e)
         {
-            writeMetrics.unavailables.inc();
+            writeMetrics.unavailables.mark();
             ClientRequestMetrics.writeUnavailables.inc();
             throw e;
         }
@@ -603,7 +603,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         if (StorageService.instance.isBootstrapMode() && !systemTableQuery(commands))
         {
-            readMetrics.unavailables.inc();
+            readMetrics.unavailables.mark();
             ClientRequestMetrics.readUnavailables.inc();
             throw new UnavailableException();
         }
@@ -615,13 +615,13 @@ public class StorageProxy implements StorageProxyMBean
         }
         catch (UnavailableException e)
         {
-            readMetrics.unavailables.inc();
+            readMetrics.unavailables.mark();
             ClientRequestMetrics.readUnavailables.inc();
             throw e;
         }
         catch (TimeoutException e)
         {
-            readMetrics.timeouts.inc();
+            readMetrics.timeouts.mark();
             ClientRequestMetrics.readTimeouts.inc();
             throw e;
         }
@@ -919,7 +919,7 @@ public class StorageProxy implements StorageProxyMBean
                     }
                     catch (UnavailableException e)
                     {
-                        rangeMetrics.unavailables.inc();
+                        rangeMetrics.unavailables.mark();
                         throw e;
                     }
                     resolver.setSources(handler.endpoints);
@@ -951,7 +951,7 @@ public class StorageProxy implements StorageProxyMBean
                             {
                                 if (logger.isDebugEnabled())
                                     logger.debug("Range slice timeout: {}", ex.toString());
-                                rangeMetrics.timeouts.inc();
+                                rangeMetrics.timeouts.mark();
                                 throw ex;
                             }
                             catch (DigestMismatchException e)
@@ -1114,77 +1114,77 @@ public class StorageProxy implements StorageProxyMBean
 
     public long getReadOperations()
     {
-        return readMetrics.opCount.count();
+        return readMetrics.latency.count();
     }
 
     public long getTotalReadLatencyMicros()
     {
-        return readMetrics.totalLatencyMicro.count();
+        return readMetrics.totalLatency.count();
     }
 
     public double getRecentReadLatencyMicros()
     {
-        return readMetrics.recentLatencyMicro.value();
+        return readMetrics.getRecentLatency();
     }
 
     public long[] getTotalReadLatencyHistogramMicros()
     {
-        return readMetrics.totalLatencyHistogramMicro.value();
+        return readMetrics.totalLatencyHistogram.getBuckets(false);
     }
 
     public long[] getRecentReadLatencyHistogramMicros()
     {
-        return readMetrics.recentLatencyHistogramMicro.value();
+        return readMetrics.recentLatencyHistogram.getBuckets(true);
     }
 
     public long getRangeOperations()
     {
-        return rangeMetrics.opCount.count();
+        return rangeMetrics.latency.count();
     }
 
     public long getTotalRangeLatencyMicros()
     {
-        return rangeMetrics.totalLatencyMicro.count();
+        return rangeMetrics.totalLatency.count();
     }
 
     public double getRecentRangeLatencyMicros()
     {
-        return rangeMetrics.recentLatencyMicro.value();
+        return rangeMetrics.getRecentLatency();
     }
 
     public long[] getTotalRangeLatencyHistogramMicros()
     {
-        return rangeMetrics.totalLatencyHistogramMicro.value();
+        return rangeMetrics.totalLatencyHistogram.getBuckets(false);
     }
 
     public long[] getRecentRangeLatencyHistogramMicros()
     {
-        return rangeMetrics.recentLatencyHistogramMicro.value();
+        return rangeMetrics.recentLatencyHistogram.getBuckets(true);
     }
 
     public long getWriteOperations()
     {
-        return writeMetrics.opCount.count();
+        return writeMetrics.latency.count();
     }
 
     public long getTotalWriteLatencyMicros()
     {
-        return writeMetrics.totalLatencyMicro.count();
+        return writeMetrics.totalLatency.count();
     }
 
     public double getRecentWriteLatencyMicros()
     {
-        return writeMetrics.recentLatencyMicro.value();
+        return writeMetrics.getRecentLatency();
     }
 
     public long[] getTotalWriteLatencyHistogramMicros()
     {
-        return writeMetrics.totalLatencyHistogramMicro.value();
+        return writeMetrics.totalLatencyHistogram.getBuckets(false);
     }
 
     public long[] getRecentWriteLatencyHistogramMicros()
     {
-        return writeMetrics.recentLatencyHistogramMicro.value();
+        return writeMetrics.recentLatencyHistogram.getBuckets(true);
     }
 
     public boolean getHintedHandoffEnabled()

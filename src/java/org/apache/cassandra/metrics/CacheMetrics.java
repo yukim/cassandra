@@ -17,12 +17,15 @@
  */
 package org.apache.cassandra.metrics;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.yammer.metrics.Metrics;
 import com.yammer.metrics.core.Counter;
 import com.yammer.metrics.core.Gauge;
+import com.yammer.metrics.core.Meter;
 import com.yammer.metrics.core.MetricName;
+import com.yammer.metrics.util.RatioGauge;
 
 import org.apache.cassandra.cache.ICache;
 
@@ -37,11 +40,11 @@ public class CacheMetrics
     /** Cache capacity in bytes */
     public final Gauge<Long> capacityInBytes;
     /** Total number of cache hits */
-    public final Counter hits;
+    public final Meter hits;
     /** Total number of cache requests */
-    public final Counter requests;
-    /** Recent cache hit rate */
-    public final Gauge<Double> recentHitRate;
+    public final Meter requests;
+    /** cache hit rate */
+    public final Gauge<Double> hitRate;
     /** Total size of cache */
     public final Gauge<Long> size;
 
@@ -63,25 +66,20 @@ public class CacheMetrics
                 return cache.capacity();
             }
         });
-        hits = Metrics.newCounter(new MetricName(GROUP_NAME, TYPE_NAME, "Hits", type));
-        recentHitRate = Metrics.newGauge(new MetricName(GROUP_NAME, TYPE_NAME, "RecentHitRate", type), new Gauge<Double>()
+        hits = Metrics.newMeter(new MetricName(GROUP_NAME, TYPE_NAME, "Hits", type), "hits", TimeUnit.SECONDS);
+        requests = Metrics.newMeter(new MetricName(GROUP_NAME, TYPE_NAME, "Requests", type), "requests", TimeUnit.SECONDS);
+        hitRate = Metrics.newGauge(new MetricName(GROUP_NAME, TYPE_NAME, "HitRate", type), new RatioGauge()
         {
-            public Double value()
+            protected double getNumerator()
             {
-                long r = requests.count();
-                long h = hits.count();
-                try
-                {
-                    return ((double)(h - lastHits.get())) / (r - lastRequests.get());
-                }
-                finally
-                {
-                    lastRequests.set(r);
-                    lastHits.set(h);
-                }
+                return hits.count();
+            }
+
+            protected double getDenominator()
+            {
+                return requests.count();
             }
         });
-        requests = Metrics.newCounter(new MetricName(GROUP_NAME, TYPE_NAME, "Requests", type));
         size = Metrics.newGauge(new MetricName(GROUP_NAME, TYPE_NAME, "Size", type), new Gauge<Long>()
         {
             public Long value()
@@ -89,5 +87,22 @@ public class CacheMetrics
                 return cache.weightedSize();
             }
         });
+    }
+
+    // for backward compatibility
+    @Deprecated
+    public double getRecentHitRate()
+    {
+        long r = requests.count();
+        long h = hits.count();
+        try
+        {
+            return ((double)(h - lastHits.get())) / (r - lastRequests.get());
+        }
+        finally
+        {
+            lastRequests.set(r);
+            lastHits.set(h);
+        }
     }
 }

@@ -17,10 +17,12 @@
  */
 package org.apache.cassandra.metrics;
 
+import java.util.concurrent.TimeUnit;
+
 import com.yammer.metrics.Metrics;
 import com.yammer.metrics.core.Counter;
-import com.yammer.metrics.core.Gauge;
 import com.yammer.metrics.core.MetricName;
+import com.yammer.metrics.core.Timer;
 
 import org.apache.cassandra.utils.EstimatedHistogram;
 
@@ -29,20 +31,16 @@ import org.apache.cassandra.utils.EstimatedHistogram;
  */
 public class LatencyMetrics
 {
-    /** Number of operation performed */
-    public final Counter opCount;
+    /** Latency */
+    public final Timer latency;
     /** Total latency in micro sec */
-    public final Counter totalLatencyMicro;
-    public final Gauge<Double> recentLatencyMicro;
-    /** Latency histogram */
-    public final Gauge<long[]> totalLatencyHistogramMicro;
-    /** Latency histogram from last read */
-    public final Gauge<long[]> recentLatencyHistogramMicro;
+    public final Counter totalLatency;
 
     protected final MetricNameFactory factory;
     protected final String namePrefix;
-    protected final EstimatedHistogram totalHistogram;
-    protected final EstimatedHistogram recentHistogram;
+
+    @Deprecated public final EstimatedHistogram totalLatencyHistogram = new EstimatedHistogram();
+    @Deprecated public final EstimatedHistogram recentLatencyHistogram = new EstimatedHistogram();
     protected long lastLatency;
     protected long lastOpCount;
 
@@ -82,41 +80,8 @@ public class LatencyMetrics
         this.factory = factory;
         this.namePrefix = namePrefix;
 
-        opCount = Metrics.newCounter(factory.createMetricName(namePrefix + "Operation"));
-        totalLatencyMicro = Metrics.newCounter(factory.createMetricName(namePrefix + "TotalLatencyMicro"));
-        recentLatencyMicro = Metrics.newGauge(factory.createMetricName(namePrefix + "RecentLatencyMicro"), new Gauge<Double>()
-        {
-            public Double value()
-            {
-                long ops = opCount.count();
-                long n = totalLatencyMicro.count();
-                try
-                {
-                    return ((double) n - lastLatency) / (ops - lastOpCount);
-                }
-                finally
-                {
-                    lastLatency = n;
-                    lastOpCount = ops;
-                }
-            }
-        });
-        totalHistogram = new EstimatedHistogram();
-        recentHistogram = new EstimatedHistogram();
-        totalLatencyHistogramMicro = Metrics.newGauge(factory.createMetricName(namePrefix + "TotalLatencyHistogramMicro"), new Gauge<long[]>()
-        {
-            public long[] value()
-            {
-                return totalHistogram.getBuckets(false);
-            }
-        });
-        recentLatencyHistogramMicro = Metrics.newGauge(factory.createMetricName(namePrefix + "RecentLatencyHistogramMicro"), new Gauge<long[]>()
-        {
-            public long[] value()
-            {
-                return recentHistogram.getBuckets(true);
-            }
-        });
+        latency = Metrics.newTimer(factory.createMetricName(namePrefix + "Latency"), TimeUnit.MICROSECONDS, TimeUnit.SECONDS);
+        totalLatency = Metrics.newCounter(factory.createMetricName(namePrefix + "TotalLatency"));
     }
 
     /** takes nanoseconds **/
@@ -128,19 +93,32 @@ public class LatencyMetrics
 
     public void addMicro(long micros)
     {
-        opCount.inc();
-        totalLatencyMicro.inc(micros);
-        totalHistogram.add(micros);
-        recentHistogram.add(micros);
+        latency.update(micros, TimeUnit.MICROSECONDS);
+        totalLatency.inc(micros);
+        totalLatencyHistogram.add(micros);
+        recentLatencyHistogram.add(micros);
     }
 
     public void release()
     {
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "Operation"));
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "TotalLatencyMicro"));
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "RecentLatencyMicro"));
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "TotalLatencyHistogramMicro"));
-        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "RecentLatencyHistogramMicro"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "Latency"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName(namePrefix + "TotalLatency"));
+    }
+
+    @Deprecated
+    public double getRecentLatency()
+    {
+        long ops = latency.count();
+        long n = totalLatency.count();
+        try
+        {
+            return ((double) n - lastLatency) / (ops - lastOpCount);
+        }
+        finally
+        {
+            lastLatency = n;
+            lastOpCount = ops;
+        }
     }
 
     static class LatencyMetricNameFactory implements MetricNameFactory

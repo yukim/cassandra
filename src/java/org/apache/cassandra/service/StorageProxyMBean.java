@@ -25,7 +25,7 @@ public interface StorageProxyMBean
     @Deprecated
     public long getReadOperations();
     /**
-     * @see org.apache.cassandra.metrics.LatencyMetrics#totalLatencyMicro
+     * @see org.apache.cassandra.metrics.LatencyMetrics#totalLatency
      */
     @Deprecated
     public long getTotalReadLatencyMicros();

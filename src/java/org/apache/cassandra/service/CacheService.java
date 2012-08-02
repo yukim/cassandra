@@ -176,32 +176,32 @@ public class CacheService implements CacheServiceMBean
 
     public long getKeyCacheHits()
     {
-        return keyCache.metrics.hits.count();
+        return keyCache.getMetrics().hits.count();
     }
 
     public long getRowCacheHits()
     {
-        return rowCache.metrics.hits.count();
+        return rowCache.getMetrics().hits.count();
     }
 
     public long getKeyCacheRequests()
     {
-        return keyCache.metrics.requests.count();
+        return keyCache.getMetrics().requests.count();
     }
 
     public long getRowCacheRequests()
     {
-        return rowCache.metrics.requests.count();
+        return rowCache.getMetrics().requests.count();
     }
 
     public double getKeyCacheRecentHitRate()
     {
-        return keyCache.metrics.recentHitRate.value();
+        return keyCache.getMetrics().getRecentHitRate();
     }
 
     public double getRowCacheRecentHitRate()
     {
-        return rowCache.metrics.recentHitRate.value();
+        return rowCache.getMetrics().getRecentHitRate();
     }
 
     public int getRowCacheSavePeriodInSeconds()
@@ -244,7 +244,7 @@ public class CacheService implements CacheServiceMBean
 
     public long getRowCacheCapacityInBytes()
     {
-        return rowCache.metrics.capacityInBytes.value();
+        return rowCache.getMetrics().capacityInBytes.value();
     }
 
     public long getRowCacheCapacityInMB()
@@ -262,7 +262,7 @@ public class CacheService implements CacheServiceMBean
 
     public long getKeyCacheCapacityInBytes()
     {
-        return keyCache.metrics.capacityInBytes.value();
+        return keyCache.getMetrics().capacityInBytes.value();
     }
 
     public long getKeyCacheCapacityInMB()
@@ -281,12 +281,12 @@ public class CacheService implements CacheServiceMBean
 
     public long getRowCacheSize()
     {
-        return rowCache.metrics.size.value();
+        return rowCache.getMetrics().size.value();
     }
 
     public long getKeyCacheSize()
     {
-        return keyCache.metrics.size.value();
+        return keyCache.getMetrics().size.value();
     }
 
     public void reduceCacheSizes()

@@ -20,8 +20,11 @@
  */
 package org.apache.cassandra.metrics;
 
+import java.util.concurrent.TimeUnit;
+
 import com.yammer.metrics.Metrics;
 import com.yammer.metrics.core.Counter;
+import com.yammer.metrics.core.Meter;
 import com.yammer.metrics.core.MetricName;
 
 public class ClientRequestMetrics extends LatencyMetrics
@@ -31,15 +34,15 @@ public class ClientRequestMetrics extends LatencyMetrics
     @Deprecated public static final Counter readUnavailables = Metrics.newCounter(ClientRequestMetrics.class, "ReadUnavailables");
     @Deprecated public static final Counter writeUnavailables = Metrics.newCounter(ClientRequestMetrics.class, "WriteUnavailables");
 
-    public final Counter timeouts;
-    public final Counter unavailables;
+    public final Meter timeouts;
+    public final Meter unavailables;
 
     public ClientRequestMetrics(String scope)
     {
         super("org.apache.cassandra.metrics", "ClientRequest", scope);
 
-        timeouts = Metrics.newCounter(factory.createMetricName("Timeouts"));
-        unavailables = Metrics.newCounter(factory.createMetricName("Unavailables"));
+        timeouts = Metrics.newMeter(factory.createMetricName("Timeouts"), "timeouts", TimeUnit.SECONDS);
+        unavailables = Metrics.newMeter(factory.createMetricName("Unavailables"), "unavailables", TimeUnit.SECONDS);
     }
 
     public void release()
