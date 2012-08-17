@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.streaming;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Collection;
@@ -26,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -79,7 +81,10 @@ public class StreamIn
         // new local sstable
         Table table = Table.open(remotedesc.ksname);
         ColumnFamilyStore cfStore = table.getColumnFamilyStore(remotedesc.cfname);
-        Descriptor localdesc = Descriptor.fromFilename(cfStore.getFlushPath(remote.size, Descriptor.Version.CURRENT));
+        Directories.DataDirectory localDir = Directories.getLocationCapableOfSize(remote.size);
+        if (localDir == null)
+            throw new RuntimeException("Insufficient disk space to store " + remote.size + " bytes");
+        Descriptor localdesc = Descriptor.fromFilename(cfStore.getTempSSTablePath(localDir.location));
 
         return new PendingFile(localdesc, remote);
     }
