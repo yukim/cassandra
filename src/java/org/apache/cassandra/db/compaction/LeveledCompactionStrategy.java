@@ -178,16 +178,14 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
     {
         Multimap<Integer, SSTableReader> byLevel = ArrayListMultimap.create();
         for (SSTableReader sstable : sstables)
-        {
-            int level = manifest.levelOf(sstable);
-            assert level >= 0;
-            byLevel.get(level).add(sstable);
-        }
+            byLevel.get(manifest.levelOf(sstable)).add(sstable);
 
         List<ICompactionScanner> scanners = new ArrayList<ICompactionScanner>(sstables.size());
         for (Integer level : byLevel.keySet())
         {
-            if (level == 0)
+            // level can be -1 when sstables are added to DataTracker but not to LeveledManifest
+            // since we don't know which level those sstable belong yet, we simply do the same as L0 sstables.
+            if (level <= 0)
             {
                 // L0 makes no guarantees about overlapping-ness.  Just create a direct scanner for each
                 for (SSTableReader sstable : byLevel.get(level))
