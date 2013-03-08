@@ -29,6 +29,7 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.TimeUUIDType;
@@ -67,7 +68,6 @@ public class DefsTest extends SchemaLoader
         }
         CFMetaData cfm = new CFMetaData("Keyspace1",
                                         "TestApplyCFM_CF",
-                                        ColumnFamilyType.Standard,
                                         BytesType.instance);
 
         cfm.comment("No comment")
@@ -471,7 +471,7 @@ public class DefsTest extends SchemaLoader
         catch (ConfigurationException expected) {}
 
         // Change cfName
-        newCfm = new CFMetaData(cf.ksName, cf.cfName + "_renamed", cf.cfType, cf.comparator);
+        newCfm = new CFMetaData(cf.ksName, cf.cfName + "_renamed", cf.cfType, cf.comparator, (AbstractType)null);
         CFMetaData.copyOpts(newCfm, cf);
         try
         {
@@ -481,7 +481,7 @@ public class DefsTest extends SchemaLoader
         catch (ConfigurationException expected) {}
 
         // Change ksName
-        newCfm = new CFMetaData(cf.ksName + "_renamed", cf.cfName, cf.cfType, cf.comparator);
+        newCfm = new CFMetaData(cf.ksName + "_renamed", cf.cfName, cf.cfType, cf.comparator, (AbstractType)null);
         CFMetaData.copyOpts(newCfm, cf);
         try
         {
@@ -491,7 +491,7 @@ public class DefsTest extends SchemaLoader
         catch (ConfigurationException expected) {}
 
         // Change cf type
-        newCfm = new CFMetaData(cf.ksName, cf.cfName, ColumnFamilyType.Super, cf.comparator);
+        newCfm = new CFMetaData(cf.ksName, cf.cfName, ColumnFamilyType.Super, cf.comparator, (AbstractType)null);
         CFMetaData.copyOpts(newCfm, cf);
         try
         {
@@ -501,7 +501,7 @@ public class DefsTest extends SchemaLoader
         catch (ConfigurationException expected) {}
 
         // Change comparator
-        newCfm = new CFMetaData(cf.ksName, cf.cfName, cf.cfType, TimeUUIDType.instance);
+        newCfm = new CFMetaData(cf.ksName, cf.cfName, cf.cfType, TimeUUIDType.instance, (AbstractType)null);
         CFMetaData.copyOpts(newCfm, cf);
         try
         {
@@ -542,7 +542,7 @@ public class DefsTest extends SchemaLoader
 
     private CFMetaData addTestCF(String ks, String cf, String comment)
     {
-        CFMetaData newCFMD = new CFMetaData(ks, cf, ColumnFamilyType.Standard, UTF8Type.instance);
+        CFMetaData newCFMD = new CFMetaData(ks, cf, ColumnFamilyType.Standard, UTF8Type.instance, (AbstractType)null);
         newCFMD.comment(comment)
                .readRepairChance(0.0);
 

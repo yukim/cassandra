@@ -197,7 +197,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             else
                 type = OperationType.UNKNOWN;
 
-            info = new CompactionInfo(new CFMetaData(Table.SYSTEM_KS, cacheType.toString(), null, null, null),
+            info = new CompactionInfo(new CFMetaData(Table.SYSTEM_KS, cacheType.toString(), null),
                                       type,
                                       0,
                                       keys.size(),
