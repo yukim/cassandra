@@ -171,11 +171,7 @@ public class CreateColumnFamilyStatement
         {
             AbstractType<?> comparator = cfProps.getComparator();
 
-            newCFMD = new CFMetaData(keyspace,
-                                     name,
-                                     ColumnFamilyType.Standard,
-                                     comparator,
-                                     null);
+            newCFMD = new CFMetaData(keyspace, name, comparator);
 
             if (CFMetaData.DEFAULT_COMPRESSOR != null && cfProps.compressionParameters.isEmpty())
                 cfProps.compressionParameters.put(CompressionParameters.SSTABLE_COMPRESSION, CFMetaData.DEFAULT_COMPRESSOR);
