@@ -119,11 +119,7 @@ public class CreateColumnFamilyStatement extends SchemaAlteringStatement
     public CFMetaData getCFMetaData() throws RequestValidationException
     {
         CFMetaData newCFMD;
-        newCFMD = new CFMetaData(keyspace(),
-                                 columnFamily(),
-                                 ColumnFamilyType.Standard,
-                                 comparator,
-                                 null);
+        newCFMD = new CFMetaData(keyspace(), columnFamily(), comparator);
         applyPropertiesTo(newCFMD);
         return newCFMD;
     }
