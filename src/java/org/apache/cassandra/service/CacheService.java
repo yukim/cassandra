@@ -348,10 +348,9 @@ public class CacheService implements CacheServiceMBean
             if (entry == null)
                 return;
             ByteBufferUtil.writeWithLength(key.key, out);
-            Descriptor desc = key.desc;
-            out.writeInt(desc.generation);
-            out.writeBoolean(desc.version.hasPromotedIndexes);
-            if (!desc.version.hasPromotedIndexes)
+            out.writeInt(key.generation);
+            out.writeBoolean(key.hasPromotedIndexes);
+            if (!key.hasPromotedIndexes)
                 return;
             RowIndexEntry.serializer.serialize(entry, out);
         }

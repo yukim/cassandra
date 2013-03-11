@@ -19,14 +19,30 @@ package org.apache.cassandra.cache;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.UUID;
 
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
 public class KeyCacheKey implements CacheKey
 {
-    public final Descriptor desc;
+    /**
+     * ColumnFamily ID.
+     * Can be null if ColumnFamily does not exit on instantiation.
+     */
+    public final UUID cfId;
+
+    /**
+     * SSTable file generation number.
+     */
+    public final int generation;
+
+    /**
+     * true if SSTable has promoted index
+     */
+    public final boolean hasPromotedIndexes;
 
     // keeping an array instead of a ByteBuffer lowers the overhead of the key cache working set,
     // without extra copies on lookup since client-provided key ByteBuffers will be array-backed already
@@ -34,19 +50,21 @@ public class KeyCacheKey implements CacheKey
 
     public KeyCacheKey(Descriptor desc, ByteBuffer key)
     {
-        this.desc = desc;
+        this.cfId = Schema.instance.getId(desc.ksname, desc.cfname);
+        this.generation = desc.generation;
+        this.hasPromotedIndexes = desc.version.hasPromotedIndexes;
         this.key = ByteBufferUtil.getArray(key);
         assert this.key != null;
     }
 
     public Pair<String, String> getPathInfo()
     {
-        return Pair.create(desc.ksname, desc.cfname);
+        return Schema.instance.getCF(cfId);
     }
 
     public String toString()
     {
-        return String.format("KeyCacheKey(%s, %s)", desc, ByteBufferUtil.bytesToHex(ByteBuffer.wrap(key)));
+        return String.format("KeyCacheKey(%s, %s)", cfId + "-" + generation, ByteBufferUtil.bytesToHex(ByteBuffer.wrap(key)));
     }
 
     @Override
@@ -57,15 +75,15 @@ public class KeyCacheKey implements CacheKey
 
         KeyCacheKey that = (KeyCacheKey) o;
 
-        if (desc != null ? !desc.equals(that.desc) : that.desc != null) return false;
-        return Arrays.equals(key, that.key);
+        if (cfId != null ? !cfId.equals(that.cfId) : that.cfId != null) return false;
+        return generation == that.generation && Arrays.equals(key, that.key);
     }
 
     @Override
     public int hashCode()
     {
-        int result = desc != null ? desc.hashCode() : 0;
-        result = 31 * result + (key != null ? Arrays.hashCode(key) : 0);
+        int result = cfId != null ? cfId.hashCode() : 0;
+        result = 31 * result + generation + (key != null ? Arrays.hashCode(key) : 0);
         return result;
     }
 }

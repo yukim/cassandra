@@ -235,6 +235,10 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 for (K key : keys)
                 {
                     Pair<String, String> path = key.getPathInfo();
+
+                    if (path == null)
+                        continue;
+
                     SequentialWriter writer = writers.get(path);
                     if (writer == null)
                     {
