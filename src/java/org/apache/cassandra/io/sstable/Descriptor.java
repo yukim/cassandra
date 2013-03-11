@@ -19,9 +19,11 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.File;
 import java.util.StringTokenizer;
+import java.util.UUID;
 
 import com.google.common.base.Objects;
 
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.utils.FilterFactory;
 import org.apache.cassandra.utils.Pair;
 
@@ -158,11 +160,7 @@ public class Descriptor
         @Override
         public boolean equals(Object o)
         {
-            if (o == this)
-                return true;
-            if (!(o instanceof Version))
-                return false;
-            return version.equals(((Version)o).version);
+            return o == this || o instanceof Version && version.equals(((Version) o).version);
         }
 
         @Override
@@ -177,6 +175,8 @@ public class Descriptor
     public final Version version;
     public final String ksname;
     public final String cfname;
+    /** current ColumnFamily ID stored in schema. can be null if no such ColumnFamily exists. */
+    public final UUID cfId;
     public final int generation;
     public final boolean temporary;
     private final int hashCode;
@@ -201,9 +201,10 @@ public class Descriptor
         this.directory = directory;
         this.ksname = ksname;
         this.cfname = cfname;
+        this.cfId = Schema.instance.getId(ksname, cfname);
         this.generation = generation;
         temporary = temp;
-        hashCode = Objects.hashCode(directory, generation, ksname, cfname, temp);
+        hashCode = Objects.hashCode(directory, generation, ksname, cfname, temp, cfId);
     }
 
     public Descriptor withGeneration(int newGeneration)
@@ -334,7 +335,8 @@ public class Descriptor
         if (!(o instanceof Descriptor))
             return false;
         Descriptor that = (Descriptor)o;
-        return that.directory.equals(this.directory) && that.generation == this.generation && that.ksname.equals(this.ksname) && that.cfname.equals(this.cfname) && that.temporary == this.temporary;
+        return that.directory.equals(this.directory) && that.generation == this.generation && that.temporary == this.temporary
+                       && (cfId != null ? cfId.equals(that.cfId) : that.ksname.equals(this.ksname) && that.cfname.equals(this.cfname) && that.cfId == null);
     }
 
     @Override
