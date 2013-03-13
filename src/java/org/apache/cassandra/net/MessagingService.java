@@ -57,6 +57,7 @@ import org.apache.cassandra.locator.ILatencySubscriber;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.metrics.DroppedMessageMetrics;
 import org.apache.cassandra.net.sink.SinkManager;
+import org.apache.cassandra.repair.*;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.streaming.*;
@@ -96,8 +97,8 @@ public final class MessagingService implements MessagingServiceMBean
         STREAM_REQUEST,
         RANGE_SLICE,
         BOOTSTRAP_TOKEN,
-        TREE_REQUEST,
-        TREE_RESPONSE,
+        @Deprecated TREE_REQUEST,
+        @Deprecated TREE_RESPONSE,
         @Deprecated JOIN,
         GOSSIP_DIGEST_SYN,
         GOSSIP_DIGEST_ACK,
@@ -110,12 +111,13 @@ public final class MessagingService implements MessagingServiceMBean
         REPLICATION_FINISHED,
         INTERNAL_RESPONSE, // responses to internal calls
         COUNTER_MUTATION,
-        STREAMING_REPAIR_REQUEST,
-        STREAMING_REPAIR_RESPONSE,
+        @Deprecated STREAMING_REPAIR_REQUEST,
+        @Deprecated STREAMING_REPAIR_RESPONSE,
         SNAPSHOT, // Similar to nt snapshot
         MIGRATION_REQUEST,
         GOSSIP_SHUTDOWN,
         _TRACE, // dummy verb so we can use MS.droppedMessages
+        REPAIR_MESSAGE,
         // use as padding for backwards compatability where a previous version needs to validate a verb from the future.
         UNUSED_1,
         UNUSED_2,
@@ -140,6 +142,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.TREE_RESPONSE, Stage.ANTI_ENTROPY);
         put(Verb.STREAMING_REPAIR_REQUEST, Stage.ANTI_ENTROPY);
         put(Verb.STREAMING_REPAIR_RESPONSE, Stage.ANTI_ENTROPY);
+        put(Verb.REPAIR_MESSAGE, Stage.ANTI_ENTROPY);
         put(Verb.GOSSIP_DIGEST_ACK, Stage.GOSSIP);
         put(Verb.GOSSIP_DIGEST_ACK2, Stage.GOSSIP);
         put(Verb.GOSSIP_DIGEST_SYN, Stage.GOSSIP);
@@ -178,10 +181,10 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.STREAM_REQUEST, StreamRequest.serializer);
         put(Verb.RANGE_SLICE, RangeSliceCommand.serializer);
         put(Verb.BOOTSTRAP_TOKEN, BootStrapper.StringSerializer.instance);
-        put(Verb.TREE_REQUEST, ActiveRepairService.TreeRequest.serializer);
-        put(Verb.TREE_RESPONSE, ActiveRepairService.Validator.serializer);
-        put(Verb.STREAMING_REPAIR_REQUEST, StreamingRepairTask.serializer);
+        put(Verb.TREE_REQUEST, TreeRequest.serializer);
+        put(Verb.STREAMING_REPAIR_REQUEST, StreamingRepairTaskSerializer.serializer);
         put(Verb.STREAMING_REPAIR_RESPONSE, UUIDSerializer.serializer);
+        put(Verb.REPAIR_MESSAGE, RepairMessage.serializer);
         put(Verb.GOSSIP_DIGEST_ACK, GossipDigestAck.serializer);
         put(Verb.GOSSIP_DIGEST_ACK2, GossipDigestAck2.serializer);
         put(Verb.GOSSIP_DIGEST_SYN, GossipDigestSyn.serializer);

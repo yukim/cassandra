@@ -42,7 +42,8 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
-import static org.apache.cassandra.service.ActiveRepairService.*;
+
+import org.apache.cassandra.repair.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MerkleTree;
@@ -105,9 +106,10 @@ public abstract class AntiEntropyServiceTestAbstract extends SchemaLoader
         local_range = StorageService.instance.getLocalPrimaryRange();
 
         // (we use REMOTE instead of LOCAL so that the reponses for the validator.complete() get lost)
-        request = new TreeRequest(UUID.randomUUID().toString(), REMOTE, local_range, new CFPair(tablename, cfname));
+        RepairJobDesc desc = new RepairJobDesc(UUID.randomUUID(), tablename, cfname, local_range);
+        request = new TreeRequest(desc, REMOTE);
         // Set a fake session corresponding to this fake request
-        ActiveRepairService.instance.submitArtificialRepairSession(request, tablename, cfname);
+        ActiveRepairService.instance.submitArtificialRepairSession(desc);
     }
 
     @After
@@ -253,7 +255,7 @@ public abstract class AntiEntropyServiceTestAbstract extends SchemaLoader
     public void testDifferencer() throws Throwable
     {
         // this next part does some housekeeping so that cleanup in the differencer doesn't error out.
-        ActiveRepairService.RepairFuture sess = ActiveRepairService.instance.submitArtificialRepairSession(request, tablename, cfname);
+        RepairFuture sess = ActiveRepairService.instance.submitArtificialRepairSession(request.desc);
 
         // generate a tree
         Validator validator = new Validator(request);
@@ -278,9 +280,9 @@ public abstract class AntiEntropyServiceTestAbstract extends SchemaLoader
 
         // difference the trees
         // note: we reuse the same endpoint which is bogus in theory but fine here
-        ActiveRepairService.TreeResponse r1 = new ActiveRepairService.TreeResponse(REMOTE, ltree);
-        ActiveRepairService.TreeResponse r2 = new ActiveRepairService.TreeResponse(REMOTE, rtree);
-        ActiveRepairService.RepairSession.Differencer diff = sess.session.new Differencer(cfname, r1, r2);
+        TreeResponse r1 = new TreeResponse(REMOTE, ltree);
+        TreeResponse r2 = new TreeResponse(REMOTE, rtree);
+        Differencer diff = new Differencer(request.desc, r1, r2);
         diff.run();
 
         // ensure that the changed range was recorded
