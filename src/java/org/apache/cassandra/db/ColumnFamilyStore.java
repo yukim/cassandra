@@ -605,6 +605,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                       descriptor.directory,
                                                       descriptor.ksname,
                                                       descriptor.cfname,
+                                                      metadata.cfId,
                                                       fileIndexGenerator.incrementAndGet(),
                                                       false);
             logger.info("Renaming new SSTable {} to {}", descriptor, newDescriptor);
@@ -681,6 +682,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                          directory,
                                          table.getName(),
                                          name,
+                                         metadata.cfId,
                                          fileIndexGenerator.incrementAndGet(),
                                          true);
         return desc.filenameFor(Component.DATA);

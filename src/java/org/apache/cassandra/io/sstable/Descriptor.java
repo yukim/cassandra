@@ -23,9 +23,10 @@ import java.util.UUID;
 
 import com.google.common.base.Objects;
 
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FilterFactory;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.UUIDGen;
 
 import static org.apache.cassandra.io.sstable.Component.separator;
 
@@ -72,6 +73,7 @@ public class Descriptor
         //             (note that there is no real format change, this is mostly a marker to know if we should expect super
         //             columns or not. We do need a major version bump however, because we should not allow streaming of
         //             super columns into this new format)
+        //             CF ID is stored in file name
 
         public static final Version CURRENT = new Version(current_version);
 
@@ -196,12 +198,17 @@ public class Descriptor
 
     public Descriptor(Version version, File directory, String ksname, String cfname, int generation, boolean temp)
     {
+        this(version, directory, ksname, cfname, null, generation, temp);
+    }
+
+    public Descriptor(Version version, File directory, String ksname, String cfname, UUID cfId, int generation, boolean temp)
+    {
         assert version != null && directory != null && ksname != null && cfname != null;
         this.version = version;
         this.directory = directory;
         this.ksname = ksname;
         this.cfname = cfname;
-        this.cfId = Schema.instance.getId(ksname, cfname);
+        this.cfId = cfId;
         this.generation = generation;
         temporary = temp;
         hashCode = Objects.hashCode(directory, generation, ksname, cfname, temp, cfId);
@@ -209,7 +216,7 @@ public class Descriptor
 
     public Descriptor withGeneration(int newGeneration)
     {
-        return new Descriptor(version, directory, ksname, cfname, newGeneration, temporary);
+        return new Descriptor(version, directory, ksname, cfname, cfId, newGeneration, temporary);
     }
 
     public String filenameFor(Component component)
@@ -223,6 +230,8 @@ public class Descriptor
         buff.append(directory).append(File.separatorChar);
         buff.append(ksname).append(separator);
         buff.append(cfname).append(separator);
+        if (cfId != null)
+            buff.append(ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(cfId))).append(separator);
         if (temporary)
             buff.append(SSTable.TEMPFILE_MARKER).append(separator);
         if (!Version.LEGACY.equals(version))
@@ -252,14 +261,14 @@ public class Descriptor
     }
 
     /**
-     * Filename of the form "<ksname>-<cfname>-[tmp-][<version>-]<gen>-<component>"
+     * Filename of the form "&lt;ksname&gt;-&lt;cfname&gt;-&lt;cfid&gt;-[tmp-][&lt;version&gt;-]&lt;gen&gt;-&lt;component&gt;"
      *
      * @param directory The directory of the SSTable files
      * @param name The name of the SSTable file
      *
      * @return A Descriptor for the SSTable, and the Component remainder.
      */
-    public static Pair<Descriptor,String> fromFilename(File directory, String name)
+    public static Pair<Descriptor, String> fromFilename(File directory, String name)
     {
         // tokenize the filename
         StringTokenizer st = new StringTokenizer(name, String.valueOf(separator));
@@ -269,8 +278,16 @@ public class Descriptor
         String ksname = st.nextToken();
         String cfname = st.nextToken();
 
-        // optional temporary marker
+        // check if next token is CF ID
         nexttok = st.nextToken();
+        UUID cfId = null;
+        try
+        {
+            cfId = UUIDGen.getUUID(ByteBufferUtil.hexToBytes(nexttok));
+            nexttok = st.nextToken();
+        }
+        catch (Exception ignored) {}
+        // optional temporary marker
         boolean temporary = false;
         if (nexttok.equals(SSTable.TEMPFILE_MARKER))
         {
@@ -290,7 +307,7 @@ public class Descriptor
         // component suffix
         String component = st.nextToken();
         directory = directory != null ? directory : new File(".");
-        return Pair.create(new Descriptor(version, directory, ksname, cfname, generation, temporary), component);
+        return Pair.create(new Descriptor(version, directory, ksname, cfname, cfId, generation, temporary), component);
     }
 
     /**
@@ -299,7 +316,7 @@ public class Descriptor
      */
     public Descriptor asTemporary(boolean temporary)
     {
-        return new Descriptor(version, directory, ksname, cfname, generation, temporary);
+        return new Descriptor(version, directory, ksname, cfname, cfId, generation, temporary);
     }
 
     /**

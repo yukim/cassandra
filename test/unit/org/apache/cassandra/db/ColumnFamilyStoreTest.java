@@ -821,8 +821,8 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
         for (int version = 1; version <= 2; ++version)
         {
-            Descriptor existing = new Descriptor(cfs.directories.getDirectoryForNewSSTables(1), "Keyspace2", "Standard1", version, false);
-            Descriptor desc = new Descriptor(Directories.getBackupsDirectory(existing), "Keyspace2", "Standard1", version, false);
+            Descriptor existing = new Descriptor(Descriptor.Version.CURRENT, cfs.directories.getDirectoryForNewSSTables(1), "Keyspace2", "Standard1", cfs.metadata.cfId, version, false);
+            Descriptor desc = new Descriptor(Descriptor.Version.CURRENT, Directories.getBackupsDirectory(existing), "Keyspace2", "Standard1", cfs.metadata.cfId, version, false);
             for (Component c : new Component[]{ Component.DATA, Component.PRIMARY_INDEX, Component.FILTER, Component.STATS })
                 assertTrue("can not find backedup file:" + desc.filenameFor(c), new File(desc.filenameFor(c)).exists());
         }

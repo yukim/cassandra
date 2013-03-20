@@ -230,24 +230,29 @@ public class SSTableReader extends SSTable
         ExecutorService executor = DebuggableThreadPoolExecutor.createWithFixedPoolSize("SSTableBatchOpen", FBUtilities.getAvailableProcessors());
         for (final Map.Entry<Descriptor, Set<Component>> entry : entries)
         {
-            Runnable runnable = new Runnable()
+            // only open SSTable with the same CF ID
+            // If SSTable does not have CF ID, then open it anyway
+            if (entry.getKey().cfId == null || entry.getKey().cfId.equals(metadata.cfId))
             {
-                public void run()
+                Runnable runnable = new Runnable()
                 {
-                    SSTableReader sstable;
-                    try
+                    public void run()
                     {
-                        sstable = open(entry.getKey(), entry.getValue(), metadata, partitioner);
+                        SSTableReader sstable;
+                        try
+                        {
+                            sstable = open(entry.getKey(), entry.getValue(), metadata, partitioner);
+                        }
+                        catch (IOException ex)
+                        {
+                            logger.error("Corrupt sstable " + entry + "; skipped", ex);
+                            return;
+                        }
+                        sstables.add(sstable);
                     }
-                    catch (IOException ex)
-                    {
-                        logger.error("Corrupt sstable " + entry + "; skipped", ex);
-                        return;
-                    }
-                    sstables.add(sstable);
-                }
-            };
-            executor.submit(runnable);
+                };
+                executor.submit(runnable);
+            }
         }
 
         executor.shutdown();

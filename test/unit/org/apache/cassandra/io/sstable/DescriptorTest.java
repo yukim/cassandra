@@ -20,7 +20,12 @@ package org.apache.cassandra.io.sstable;
  *
  */
 
+import java.io.File;
+import java.util.UUID;
+
 import org.apache.cassandra.utils.FilterFactory;
+import org.apache.cassandra.utils.UUIDGen;
+
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -63,5 +68,18 @@ public class DescriptorTest
         desc = Descriptor.fromFilename("Keyspace1-Standard1-ia-1-Data.db");
         assertEquals("ia", desc.version.toString());
         assertEquals(desc.version.filterType, FilterFactory.Type.MURMUR3);
+    }
+
+    @Test
+    public void testCfId()
+    {
+        UUID cfId = UUIDGen.getTimeUUID();
+        Descriptor desc = new Descriptor(Descriptor.Version.CURRENT, new File("."), "Keyspace1", "Standard1", cfId, 1, false);
+        String filename = desc.filenameFor(Component.DATA);
+
+        desc = Descriptor.fromFilename(filename);
+        assert desc.generation == 1;
+        assert !desc.temporary;
+        assert cfId.equals(desc.cfId);
     }
 }
