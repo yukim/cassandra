@@ -64,9 +64,9 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         this.cacheLoader = cacheloader;
     }
 
-    public File getCachePath(String ksName, String cfName, String version)
+    public File getCachePath(String ksName, String cfName, UUID cfId, String version)
     {
-        return DatabaseDescriptor.getSerializedCachePath(ksName, cfName, cacheType, version);
+        return DatabaseDescriptor.getSerializedCachePath(ksName, cfName, cfId, cacheType, version);
     }
 
     public Writer getWriter(int keysToSave)
@@ -102,8 +102,8 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         int count = 0;
         long start = System.currentTimeMillis();
 
-        // old cache format that only saves keys
-        File path = getCachePath(cfs.table.getName(), cfs.name, null);
+        // old cache format that only saves keys(no cfId, no version in filename)
+        File path = getCachePath(cfs.table.getName(), cfs.name, null, null);
         if (path.exists())
         {
             DataInputStream in = null;
@@ -131,7 +131,10 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         }
 
         // modern format, allows both key and value (so key cache load can be purely sequential)
-        path = getCachePath(cfs.table.getName(), cfs.name, CURRENT_VERSION);
+        path = getCachePath(cfs.table.getName(), cfs.name, cfs.metadata.cfId, CURRENT_VERSION);
+        // if path does not exist, try without cfId (assuming saved cache is created with current CF)
+        if (!path.exists())
+            path = getCachePath(cfs.table.getName(), cfs.name, null, CURRENT_VERSION);
         if (path.exists())
         {
             DataInputStream in = null;
@@ -228,13 +231,13 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
 
             long start = System.currentTimeMillis();
 
-            HashMap<Pair<String, String>, SequentialWriter> writers = new HashMap<Pair<String, String>, SequentialWriter>();
+            HashMap<CacheKey.PathInfo, SequentialWriter> writers = new HashMap<>();
 
             try
             {
                 for (K key : keys)
                 {
-                    Pair<String, String> path = key.getPathInfo();
+                    CacheKey.PathInfo path = key.getPathInfo();
                     SequentialWriter writer = writers.get(path);
                     if (writer == null)
                     {
@@ -260,13 +263,13 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                     FileUtils.closeQuietly(writer);
             }
 
-            for (Map.Entry<Pair<String, String>, SequentialWriter> info : writers.entrySet())
+            for (Map.Entry<CacheKey.PathInfo, SequentialWriter> info : writers.entrySet())
             {
-                Pair<String, String> path = info.getKey();
+                CacheKey.PathInfo path = info.getKey();
                 SequentialWriter writer = info.getValue();
 
                 File tmpFile = new File(writer.getPath());
-                File cacheFile = getCachePath(path.left, path.right, CURRENT_VERSION);
+                File cacheFile = getCachePath(path.keyspace, path.columnFamily, path.cfId, CURRENT_VERSION);
 
                 cacheFile.delete(); // ignore error if it didn't exist
                 if (!tmpFile.renameTo(cacheFile))
@@ -276,9 +279,9 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             logger.info(String.format("Saved %s (%d items) in %d ms", cacheType, keys.size(), System.currentTimeMillis() - start));
         }
 
-        private SequentialWriter tempCacheFile(Pair<String, String> pathInfo)
+        private SequentialWriter tempCacheFile(CacheKey.PathInfo pathInfo)
         {
-            File path = getCachePath(pathInfo.left, pathInfo.right, CURRENT_VERSION);
+            File path = getCachePath(pathInfo.keyspace, pathInfo.columnFamily, pathInfo.cfId, CURRENT_VERSION);
             File tmpFile = FileUtils.createTempFile(path.getName(), null, path.getParentFile());
             return SequentialWriter.open(tmpFile, true);
         }

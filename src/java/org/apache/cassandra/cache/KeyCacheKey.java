@@ -39,9 +39,9 @@ public class KeyCacheKey implements CacheKey
         assert this.key != null;
     }
 
-    public Pair<String, String> getPathInfo()
+    public PathInfo getPathInfo()
     {
-        return Pair.create(desc.ksname, desc.cfname);
+        return new PathInfo(desc.ksname, desc.cfname, desc.cfId);
     }
 
     public String toString()

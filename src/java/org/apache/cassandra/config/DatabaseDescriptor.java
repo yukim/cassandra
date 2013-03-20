@@ -51,6 +51,7 @@ import org.apache.cassandra.scheduler.IRequestScheduler;
 import org.apache.cassandra.scheduler.NoScheduler;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.MigrationManager;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class DatabaseDescriptor
@@ -1055,9 +1056,17 @@ public class DatabaseDescriptor
         return conf.max_hint_window_in_ms;
     }
 
-    public static File getSerializedCachePath(String ksName, String cfName, CacheService.CacheType cacheType, String version)
+    public static File getSerializedCachePath(String ksName, String cfName, UUID cfId, CacheService.CacheType cacheType, String version)
     {
-        return new File(conf.saved_caches_directory + File.separator + ksName + "-" + cfName + "-" + cacheType + (version == null ? "" : "-" + version + ".db"));
+        StringBuilder builder = new StringBuilder();
+        builder.append(conf.saved_caches_directory).append(File.separator);
+        builder.append(ksName).append('-');
+        builder.append(cfName).append('-');
+        if (cfId != null)
+            builder.append(ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(cfId))).append('-');
+        builder.append(cacheType);
+        builder.append((version == null ? "" : "-" + version + ".db"));
+        return new File(builder.toString());
     }
 
     public static int getDynamicUpdateInterval()
