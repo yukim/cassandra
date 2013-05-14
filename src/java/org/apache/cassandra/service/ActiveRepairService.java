@@ -468,18 +468,6 @@ public class ActiveRepairService
     }
 
     /**
-     * A tuple of table and cf.
-     */
-    public static class CFPair extends Pair<String,String>
-    {
-        public CFPair(String table, String cf)
-        {
-            super(table, cf);
-            assert table != null && cf != null;
-        }
-    }
-
-    /**
      * A tuple of table, cf, address and range that represents a location we have an outstanding TreeRequest for.
      */
     public static class TreeRequest
@@ -490,9 +478,9 @@ public class ActiveRepairService
         public final InetAddress endpoint;
         public final Range<Token> range;
         public final int gcBefore;
-        public final CFPair cf;
+        public final CFPath cf;
 
-        public TreeRequest(String sessionid, InetAddress endpoint, Range<Token> range, int gcBefore, CFPair cf)
+        public TreeRequest(String sessionid, InetAddress endpoint, Range<Token> range, int gcBefore, CFPath cf)
         {
             this.sessionid = sessionid;
             this.endpoint = endpoint;
@@ -549,7 +537,7 @@ public class ActiveRepairService
                 int gcBefore = -1;
                 if (version >= MessagingService.VERSION_20)
                     gcBefore = in.readInt();
-                CFPair cfpair = new CFPair(in.readUTF(), in.readUTF());
+                CFPath cfpair = new CFPath(in.readUTF(), in.readUTF());
                 Range<Token> range;
                 range = (Range<Token>) AbstractBounds.serializer.deserialize(in, version);
 
@@ -839,7 +827,7 @@ public class ActiveRepairService
                 int gcBefore = (int)(System.currentTimeMillis()/1000) - Table.open(tablename).getColumnFamilyStore(cfname).metadata.getGcGraceSeconds();
 
                 for (InetAddress endpoint : allEndpoints)
-                    treeRequests.add(new TreeRequest(getName(), endpoint, range, gcBefore, new CFPair(tablename, cfname)));
+                    treeRequests.add(new TreeRequest(getName(), endpoint, range, gcBefore, new CFPath(tablename, cfname)));
 
                 logger.info(String.format("[repair #%s] requesting merkle trees for %s (to %s)", getName(), cfname, allEndpoints));
                 treeRequests.start();

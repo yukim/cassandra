@@ -41,6 +41,7 @@ import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.CFPath;
 import org.apache.cassandra.utils.FBUtilities;
 
 import static org.junit.Assert.assertEquals;
@@ -86,7 +87,7 @@ public class LeveledCompactionStrategyTest extends SchemaLoader
         assert strategy.getLevelSize(1) > 0;
         assert strategy.getLevelSize(2) > 0;
 
-        ActiveRepairService.CFPair p = new ActiveRepairService.CFPair(ksname, cfname);
+        CFPath p = new CFPath(ksname, cfname);
         Range<Token> range = new Range<Token>(Util.token(""), Util.token(""));
         int gcBefore = (int)(System.currentTimeMillis()/1000) - table.getColumnFamilyStore(cfname).metadata.getGcGraceSeconds();
         ActiveRepairService.TreeRequest req = new ActiveRepairService.TreeRequest("1", FBUtilities.getLocalAddress(), range, gcBefore, p);

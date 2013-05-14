@@ -30,6 +30,7 @@ import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.utils.CFPath;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MerkleTree;
 
@@ -105,7 +106,7 @@ public class SerializationsTest extends AbstractSerializationsTester
 
     private static class Statics
     {
-        private static final ActiveRepairService.CFPair pair = new ActiveRepairService.CFPair("Keyspace1", "Standard1");
+        private static final CFPath pair = new CFPath("Keyspace1", "Standard1");
         private static final ActiveRepairService.TreeRequest req = new ActiveRepairService.TreeRequest("sessionId", FBUtilities.getBroadcastAddress(), FULL_RANGE, 1234, pair);
     }
 }

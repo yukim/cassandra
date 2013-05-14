@@ -45,6 +45,7 @@ import org.apache.cassandra.locator.TokenMetadata;
 import static org.apache.cassandra.service.ActiveRepairService.*;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.CFPath;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MerkleTree;
 
@@ -108,7 +109,7 @@ public abstract class AntiEntropyServiceTestAbstract extends SchemaLoader
 
         // (we use REMOTE instead of LOCAL so that the reponses for the validator.complete() get lost)
         int gcBefore = (int)(System.currentTimeMillis()/1000) - store.metadata.getGcGraceSeconds();
-        request = new TreeRequest(UUID.randomUUID().toString(), REMOTE, local_range, gcBefore, new CFPair(tablename, cfname));
+        request = new TreeRequest(UUID.randomUUID().toString(), REMOTE, local_range, gcBefore, new CFPath(tablename, cfname));
         // Set a fake session corresponding to this fake request
         ActiveRepairService.instance.submitArtificialRepairSession(request, tablename, cfname);
     }
