@@ -37,6 +37,7 @@ import javax.management.ObjectName;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.AtomicDouble;
+import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 import org.apache.log4j.Level;
@@ -78,6 +79,8 @@ import org.apache.cassandra.service.paxos.CommitVerbHandler;
 import org.apache.cassandra.service.paxos.PrepareVerbHandler;
 import org.apache.cassandra.service.paxos.ProposeVerbHandler;
 import org.apache.cassandra.streaming.*;
+import org.apache.cassandra.streaming.management.StreamEvent;
+import org.apache.cassandra.streaming.management.StreamEventHandler;
 import org.apache.cassandra.thrift.EndpointDetails;
 import org.apache.cassandra.thrift.TokenRange;
 import org.apache.cassandra.thrift.cassandraConstants;
@@ -1772,7 +1775,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     private void restoreReplicaCount(InetAddress endpoint, final InetAddress notifyEndpoint)
     {
-        final Multimap<InetAddress, String> fetchSources = HashMultimap.create();
         Multimap<String, Map.Entry<InetAddress, Collection<Range<Token>>>> rangesToFetch = HashMultimap.create();
 
         final InetAddress myAddress = FBUtilities.getBroadcastAddress();
@@ -1789,40 +1791,31 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             Multimap<InetAddress, Range<Token>> sourceRanges = getNewSourceRanges(table, myNewRanges);
             for (Map.Entry<InetAddress, Collection<Range<Token>>> entry : sourceRanges.asMap().entrySet())
             {
-                fetchSources.put(entry.getKey(), table);
                 rangesToFetch.put(table, entry);
             }
         }
 
+        StreamOperation op = StreamManager.instance.createOperation(OperationType.RESTORE_REPLICA_COUNT);
+        op.addEventListener(new StreamEventHandler()
+        {
+            public void handleStreamEvent(StreamEvent event)
+            {
+                if (event.eventType == StreamEvent.Type.OPERATION_COMPLETE)
+                    sendReplicationNotification(notifyEndpoint);
+            }
+        });
         for (final String table : rangesToFetch.keySet())
         {
             for (Map.Entry<InetAddress, Collection<Range<Token>>> entry : rangesToFetch.get(table))
             {
                 final InetAddress source = entry.getKey();
                 Collection<Range<Token>> ranges = entry.getValue();
-                final IStreamCallback callback = new IStreamCallback()
-                {
-                    public void onSuccess()
-                    {
-                        synchronized (fetchSources)
-                        {
-                            fetchSources.remove(source, table);
-                            if (fetchSources.isEmpty())
-                                sendReplicationNotification(notifyEndpoint);
-                        }
-                    }
-
-                    public void onFailure()
-                    {
-                        logger.warn("Streaming from " + source + " failed");
-                        onSuccess(); // calling onSuccess to send notification
-                    }
-                };
                 if (logger.isDebugEnabled())
                     logger.debug("Requesting from " + source + " ranges " + StringUtils.join(ranges, ", "));
-                StreamIn.requestRanges(source, table, ranges, callback, OperationType.RESTORE_REPLICA_COUNT);
+                op.requestRanges(source, table, ranges);
             }
         }
+        op.start();
     }
 
     // needs to be modified to accept either a table or ARS.
@@ -2691,17 +2684,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         setMode(Mode.LEAVING, "streaming data to other nodes", true);
 
-        CountDownLatch latch = streamRanges(rangesToStream);
-        CountDownLatch hintsLatch = streamHints();
+        Future<Boolean> streamSuccess = streamRanges(rangesToStream);
+        Future<Boolean> hintsSuccess = streamHints();
 
         // wait for the transfer runnables to signal the latch.
         logger.debug("waiting for stream aks.");
         try
         {
-            latch.await();
-            hintsLatch.await();
+            streamSuccess.get();
+            hintsSuccess.get();
         }
-        catch (InterruptedException e)
+        catch (ExecutionException | InterruptedException e)
         {
             throw new RuntimeException(e);
         }
@@ -2710,10 +2703,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         onFinish.run();
     }
 
-    private CountDownLatch streamHints()
+    private Future<Boolean> streamHints()
     {
         if (HintedHandOffManager.instance.listEndpointsPendingHints().size() == 0)
-            return new CountDownLatch(0);
+            return Futures.immediateFuture(true);
 
         // gather all live nodes in the cluster that aren't also leaving
         List<InetAddress> candidates = new ArrayList<InetAddress>(StorageService.instance.getTokenMetadata().cloneAfterAllLeft().getAllEndpoints());
@@ -2728,7 +2721,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (candidates.isEmpty())
         {
             logger.warn("Unable to stream hints since no live endpoints seen");
-            return new CountDownLatch(0);
+            return Futures.immediateFuture(true);
         }
         else
         {
@@ -2740,14 +2733,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             Token token = StorageService.getPartitioner().getMinimumToken();
             List<Range<Token>> ranges = Collections.singletonList(new Range<Token>(token, token));
 
-            CountDownLatch latch = new CountDownLatch(1);
-            StreamOut.transferRanges(hintsDestinationHost,
-                                     Table.open(Table.SYSTEM_KS),
-                                     Collections.singletonList(Table.open(Table.SYSTEM_KS).getColumnFamilyStore(SystemTable.HINTS_CF)),
-                                     ranges,
-                                     new CountingDownStreamCallback(latch, hintsDestinationHost),
-                                     OperationType.UNBOOTSTRAP);
-            return latch;
+            StreamOperation op = StreamManager.instance.createOperation(OperationType.HINTS);
+            op.transferRanges(hintsDestinationHost, Table.SYSTEM_KS, ranges, SystemTable.HINTS_CF);
+            return op.start();
         }
     }
 
@@ -2809,25 +2797,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (relocator.streamsNeeded())
         {
             setMode(Mode.MOVING, "fetching new ranges and streaming old ranges", true);
-
-            relocator.logStreamsMap("[Move->STREAMING]");
-            CountDownLatch streamLatch = relocator.streams();
-
-            relocator.logRequestsMap("[Move->FETCHING]");
-            CountDownLatch fetchLatch = relocator.requests();
-
             try
             {
-                streamLatch.await();
-                fetchLatch.await();
+                relocator.stream().get();
             }
-            catch (InterruptedException e)
+            catch (ExecutionException | InterruptedException e)
             {
-                throw new RuntimeException("Interrupted latch while waiting for stream/fetch ranges to finish: " + e.getMessage());
+                throw new RuntimeException("Interrupted while waiting for stream/fetch ranges to finish: " + e.getMessage());
             }
         }
         else
+        {
             setMode(Mode.MOVING, "No ranges to fetch/stream", true);
+        }
 
         setTokens(Collections.singleton(newToken)); // setting new token as we have everything settled
 
@@ -2837,8 +2819,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     private class RangeRelocator
     {
-        private Map<String, Multimap<InetAddress, Range<Token>>> rangesToFetch = new HashMap<String, Multimap<InetAddress, Range<Token>>>();
-        private Map<String, Multimap<Range<Token>, InetAddress>> rangesToStreamByTable = new HashMap<String, Multimap<Range<Token>, InetAddress>>();
+        private StreamOperation op = StreamManager.instance.createOperation(OperationType.BOOTSTRAP);
 
         private RangeRelocator(Collection<Token> tokens, List<String> tables)
         {
@@ -2853,15 +2834,15 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             // clone to avoid concurrent modification in calculateNaturalEndpoints
             TokenMetadata tokenMetaClone = tokenMetadata.cloneOnlyTokenMap();
 
-            for (String table : tables)
+            for (String keyspace : tables)
             {
                 for (Token newToken : newTokens)
                 {
                     // replication strategy of the current keyspace (aka table)
-                    AbstractReplicationStrategy strategy = Table.open(table).getReplicationStrategy();
+                    AbstractReplicationStrategy strategy = Table.open(keyspace).getReplicationStrategy();
 
                     // getting collection of the currently used ranges by this keyspace
-                    Collection<Range<Token>> currentRanges = getRangesForEndpoint(table, localAddress);
+                    Collection<Range<Token>> currentRanges = getRangesForEndpoint(keyspace, localAddress);
                     // collection of ranges which this node will serve after move to the new token
                     Collection<Range<Token>> updatedRanges = strategy.getPendingAddressRanges(tokenMetadata, newToken, localAddress);
 
@@ -2892,51 +2873,39 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                     // calculating endpoints to stream current ranges to if needed
                     // in some situations node will handle current ranges as part of the new ranges
-                    Multimap<Range<Token>, InetAddress> rangeWithEndpoints = HashMultimap.create();
-
+                    Multimap<InetAddress, Range<Token>> endpointRanges = HashMultimap.create();
                     for (Range<Token> toStream : rangesPerTable.left)
                     {
                         Set<InetAddress> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(toStream.right, tokenMetaClone));
                         Set<InetAddress> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(toStream.right, tokenMetaCloneAllSettled));
                         logger.debug("Range:" + toStream + "Current endpoints: " + currentEndpoints + " New endpoints: " + newEndpoints);
-                        rangeWithEndpoints.putAll(toStream, Sets.difference(newEndpoints, currentEndpoints));
+                        for (InetAddress address : Sets.difference(newEndpoints, currentEndpoints))
+                            endpointRanges.put(address, toStream);
                     }
 
-                    // associating table with range-to-endpoints map
-                    rangesToStreamByTable.put(table, rangeWithEndpoints);
+                    // stream ranges
+                    for (InetAddress address : endpointRanges.keySet())
+                        op.transferRanges(address, keyspace, endpointRanges.get(address));
 
+                    // stream requests
                     Multimap<InetAddress, Range<Token>> workMap = RangeStreamer.getWorkMap(rangesToFetchWithPreferredEndpoints);
-                    rangesToFetch.put(table, workMap);
+                    for (InetAddress address : workMap.keySet())
+                        op.requestRanges(address, keyspace, workMap.get(address));
 
                     if (logger.isDebugEnabled())
-                        logger.debug("Table {}: work map {}.", table, workMap);
+                        logger.debug("Table {}: work map {}.", keyspace, workMap);
                 }
             }
         }
 
-        private void logStreamsMap(String prefix)
+        public Future<Boolean> stream()
         {
-            logger.debug("{} Work map: {}", prefix, rangesToStreamByTable);
-        }
-
-        private void logRequestsMap(String prefix)
-        {
-            logger.debug("{} Work map: {}", prefix, rangesToFetch);
+            return op.start();
         }
 
         private boolean streamsNeeded()
         {
-            return !rangesToStreamByTable.isEmpty() || !rangesToFetch.isEmpty();
-        }
-
-        private CountDownLatch streams()
-        {
-            return streamRanges(rangesToStreamByTable);
-        }
-
-        private CountDownLatch requests()
-        {
-            return requestRanges(rangesToFetch);
+            return !op.getLiveSessions().isEmpty();
         }
     }
 
@@ -2992,25 +2961,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (relocator.streamsNeeded())
         {
             setMode(Mode.RELOCATING, "fetching new ranges and streaming old ranges", true);
-
-            relocator.logStreamsMap("[Relocate->STREAMING]");
-            CountDownLatch streamLatch = relocator.streams();
-
-            relocator.logRequestsMap("[Relocate->FETCHING]");
-            CountDownLatch fetchLatch = relocator.requests();
-
             try
             {
-                streamLatch.await();
-                fetchLatch.await();
+                relocator.stream().get();
             }
-            catch (InterruptedException e)
+            catch (ExecutionException | InterruptedException e)
             {
                 throw new RuntimeException("Interrupted latch while waiting for stream/fetch ranges to finish: " + e.getMessage());
             }
         }
         else
+        {
             setMode(Mode.RELOCATING, "no new ranges to stream/fetch", true);
+        }
 
         Collection<Token> currentTokens = SystemTable.updateLocalTokens(tokens, Collections.<Token>emptyList());
         tokenMetadata.updateNormalTokens(currentTokens, FBUtilities.getBroadcastAddress());
@@ -3417,26 +3380,21 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * Seed data to the endpoints that will be responsible for it at the future
      *
      * @param rangesToStreamByTable tables and data ranges with endpoints included for each
-     * @return latch to count down
+     * @return async Future for whether stream was success
      */
-    private CountDownLatch streamRanges(final Map<String, Multimap<Range<Token>, InetAddress>> rangesToStreamByTable)
+    private Future<Boolean> streamRanges(final Map<String, Multimap<Range<Token>, InetAddress>> rangesToStreamByTable)
     {
         // First, we build a list of ranges to stream to each host, per table
         final Map<String, Map<InetAddress, List<Range<Token>>>> sessionsToStreamByTable = new HashMap<String, Map<InetAddress, List<Range<Token>>>>();
-        // The number of stream out sessions we need to start, to be built up as we build sessionsToStreamByTable
-        int sessionCount = 0;
-
         for (Map.Entry<String, Multimap<Range<Token>, InetAddress>> entry : rangesToStreamByTable.entrySet())
         {
+            String keyspace = entry.getKey();
             Multimap<Range<Token>, InetAddress> rangesWithEndpoints = entry.getValue();
 
             if (rangesWithEndpoints.isEmpty())
                 continue;
 
-            final String table = entry.getKey();
-
             Map<InetAddress, List<Range<Token>>> rangesPerEndpoint = new HashMap<InetAddress, List<Range<Token>>>();
-
             for (final Map.Entry<Range<Token>, InetAddress> endPointEntry : rangesWithEndpoints.entries())
             {
                 final Range<Token> range = endPointEntry.getKey();
@@ -3451,12 +3409,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 curRanges.add(range);
             }
 
-            sessionCount += rangesPerEndpoint.size();
-            sessionsToStreamByTable.put(table, rangesPerEndpoint);
+            sessionsToStreamByTable.put(keyspace, rangesPerEndpoint);
         }
 
-        final CountDownLatch latch = new CountDownLatch(sessionCount);
-
+        StreamOperation op = StreamManager.instance.createOperation(OperationType.UNBOOTSTRAP);
         for (Map.Entry<String, Map<InetAddress, List<Range<Token>>>> entry : sessionsToStreamByTable.entrySet())
         {
             final String table = entry.getKey();
@@ -3468,90 +3424,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 final InetAddress newEndpoint = rangesEntry.getKey();
 
                 // TODO each call to transferRanges re-flushes, this is potentially a lot of waste
-                StreamOut.transferRanges(newEndpoint,
-                                         Table.open(table),
-                                         ranges,
-                                         new CountingDownStreamCallback(latch, newEndpoint),
-                                         OperationType.UNBOOTSTRAP);
+                op.transferRanges(newEndpoint, table, ranges);
             }
         }
-        return latch;
-    }
-
-    static class CountingDownStreamCallback implements IStreamCallback
-    {
-        private final CountDownLatch latch;
-        private final InetAddress targetAddr;
-
-        CountingDownStreamCallback(CountDownLatch latch, InetAddress targetAddr)
-        {
-            this.latch = latch;
-            this.targetAddr = targetAddr;
-        }
-
-        public void onSuccess()
-        {
-            latch.countDown();
-        }
-
-        public void onFailure()
-        {
-            logger.warn("Streaming to " + targetAddr + " failed");
-            onSuccess(); // calling onSuccess for latch countdown
-        }
-    }
-
-    /**
-     * Used to request ranges from endpoints in the ring (will block until all data is fetched and ready)
-     * @param ranges ranges to fetch as map of the preferred address and range collection
-     * @return latch to count down
-     */
-    private CountDownLatch requestRanges(final Map<String, Multimap<InetAddress, Range<Token>>> ranges)
-    {
-        final CountDownLatch latch = new CountDownLatch(ranges.keySet().size());
-        for (Map.Entry<String, Multimap<InetAddress, Range<Token>>> entry : ranges.entrySet())
-        {
-            Multimap<InetAddress, Range<Token>> endpointWithRanges = entry.getValue();
-
-            if (endpointWithRanges.isEmpty())
-            {
-                latch.countDown();
-                continue;
-            }
-
-            final String table = entry.getKey();
-            final Set<InetAddress> pending = new HashSet<InetAddress>(endpointWithRanges.keySet());
-
-            // Send messages to respective folks to stream data over to me
-            for (final InetAddress source: endpointWithRanges.keySet())
-            {
-                Collection<Range<Token>> toFetch = endpointWithRanges.get(source);
-
-                final IStreamCallback callback = new IStreamCallback()
-                {
-                    public void onSuccess()
-                    {
-                        pending.remove(source);
-
-                        if (pending.isEmpty())
-                            latch.countDown();
-                    }
-
-                    public void onFailure()
-                    {
-                        logger.warn("Streaming from " + source + " failed");
-                        onSuccess(); // calling onSuccess for latch countdown
-                    }
-                };
-
-                if (logger.isDebugEnabled())
-                    logger.debug("Requesting from " + source + " ranges " + StringUtils.join(toFetch, ", "));
-
-                // sending actual request
-                StreamIn.requestRanges(source, table, toFetch, callback, OperationType.BOOTSTRAP);
-            }
-        }
-        return latch;
+        return op.start();
     }
 
     /**
