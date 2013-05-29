@@ -15,19 +15,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
+package org.apache.cassandra.streaming.messages;
+
+import java.io.IOException;
+import java.nio.channels.WritableByteChannel;
 
 /**
- * Streaming operation type.
  */
-public enum OperationType
+public class CompleteMessage extends StreamMessage
 {
-    AES,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+    public CompleteMessage()
+    {
+        super(Type.COMPLETE);
+    }
 
+    @Override
+    protected void writeMessage(WritableByteChannel out) throws IOException
+    {
+    }
+}

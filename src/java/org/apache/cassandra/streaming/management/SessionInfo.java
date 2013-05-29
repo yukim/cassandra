@@ -15,19 +15,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
+package org.apache.cassandra.streaming.management;
+
+import java.net.InetAddress;
+import java.util.Collection;
+
+import org.apache.cassandra.streaming.StreamSession;
+import org.apache.cassandra.streaming.messages.StreamSummary;
 
 /**
- * Streaming operation type.
+ * Stream session info.
  */
-public enum OperationType
+public final class SessionInfo
 {
-    AES,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+    public final InetAddress peer;
+    public final StreamSummary[] receiving;
+    public final StreamSummary[] sending;
 
+    public SessionInfo(StreamSession session)
+    {
+        this.peer = session.peer;
+        this.receiving = null;
+        this.sending = null;
+    }
+}

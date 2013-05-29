@@ -15,19 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
+package org.apache.cassandra.streaming.management;
 
-/**
- * Streaming operation type.
- */
-public enum OperationType
+public interface StreamEventHandler
 {
-    AES,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
+    void handleStreamEvent(StreamEvent event);
 }
-

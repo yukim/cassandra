@@ -15,19 +15,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
+package org.apache.cassandra.streaming.management;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.cassandra.streaming.StreamOperation;
+import org.apache.cassandra.streaming.StreamSession;
 
 /**
- * Streaming operation type.
+ * Stream operation info.
  */
-public enum OperationType
+public class OperationInfo
 {
-    AES,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+    public final String operationId;
+    public final String type;
+    public final List<SessionInfo> sessions;
 
+    public OperationInfo(StreamOperation operation)
+    {
+        this.operationId = operation.operationId.toString();
+        this.type = operation.type.name();
+        sessions = new ArrayList<>(operation.getLiveSessions().size());
+        for (StreamSession session : operation.getLiveSessions())
+            sessions.add(new SessionInfo(session));
+    }
+}
