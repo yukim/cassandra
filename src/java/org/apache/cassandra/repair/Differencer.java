@@ -59,12 +59,6 @@ public class Differencer implements Runnable
      */
     public void run()
     {
-        // restore partitioners (in case we were serialized)
-        if (r1.tree.partitioner() == null)
-            r1.tree.partitioner(StorageService.getPartitioner());
-        if (r2.tree.partitioner() == null)
-            r2.tree.partitioner(StorageService.getPartitioner());
-
         // compare trees, and collect differences
         differences.addAll(MerkleTree.difference(r1.tree, r2.tree));
 

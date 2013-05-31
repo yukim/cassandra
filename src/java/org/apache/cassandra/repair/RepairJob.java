@@ -169,16 +169,9 @@ public class RepairJob
         }
 
         if (tree == null)
-        {
             failed = true;
-        }
         else
-        {
-            // Reestablishing the range because we don't serialize it (for bad
-            // reason - see MerkleTree for details)
-            tree.fullRange = desc.range;
             trees.add(new TreeResponse(endpoint, tree));
-        }
         return treeRequests.completed(endpoint);
     }
 
