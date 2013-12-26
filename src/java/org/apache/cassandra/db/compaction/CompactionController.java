@@ -47,7 +47,7 @@ public class CompactionController
     private final IntervalTree<SSTableReader> overlappingTree;
 
     public final int gcBefore;
-    public boolean keyExistenceIsExpensive;
+    private final boolean keyExistenceIsExpensive;
     public final int mergeShardBefore;
     private final Throttle throttle = new Throttle("Cassandra_Throttle", new Throttle.ThroughputFunction()
     {

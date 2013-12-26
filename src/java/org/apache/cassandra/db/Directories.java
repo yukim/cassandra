@@ -356,6 +356,18 @@ public class Directories
         return false;
     }
 
+    // The snapshot must exist
+    public long snapshotCreationTime(String snapshotName)
+    {
+        for (File dir : sstableDirectories)
+        {
+            File snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
+            if (snapshotDir.exists())
+                return snapshotDir.lastModified();
+        }
+        throw new RuntimeException("Snapshot " + snapshotName + " doesn't exist");
+    }
+
     public void clearSnapshot(String snapshotName) throws IOException
     {
         // If snapshotName is empty or null, we will delete the entire snapshot directory
