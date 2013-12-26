@@ -270,7 +270,7 @@ public class AntiEntropyService
             this(request,
                  // TODO: memory usage (maxsize) should either be tunable per
                  // CF, globally, or as shared for all CFs in a cluster
-                 new MerkleTree(DatabaseDescriptor.getPartitioner(), request.range, MerkleTree.RECOMMENDED_DEPTH, (int)Math.pow(2, 15)));
+                 new MerkleTree(DatabaseDescriptor.getPartitioner(), request.range, MerkleTree.RECOMMENDED_DEPTH, (int) Math.pow(2, 17)));
         }
 
         Validator(TreeRequest request, MerkleTree tree)
