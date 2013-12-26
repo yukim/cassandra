@@ -451,6 +451,7 @@ public class DatabaseDescriptor
             Schema.instance.load(CFMetaData.SchemaKeyspacesCf);
             Schema.instance.load(CFMetaData.SchemaColumnFamiliesCf);
             Schema.instance.load(CFMetaData.SchemaColumnsCf);
+            Schema.instance.load(CFMetaData.RepairHistoryCf);
 
             Schema.instance.addSystemTable(systemMeta);
 

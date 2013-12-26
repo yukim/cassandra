@@ -90,7 +90,8 @@ public final class KSMetaData
                                                 CFMetaData.VersionCf,
                                                 CFMetaData.SchemaKeyspacesCf,
                                                 CFMetaData.SchemaColumnFamiliesCf,
-                                                CFMetaData.SchemaColumnsCf);
+                                                CFMetaData.SchemaColumnsCf,
+                                                CFMetaData.RepairHistoryCf);
         return new KSMetaData(Table.SYSTEM_TABLE, LocalStrategy.class, Collections.<String, String>emptyMap(), true, cfDefs);
     }
 

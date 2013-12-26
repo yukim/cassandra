@@ -33,24 +33,18 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.*;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Table;
-import org.apache.cassandra.db.SnapshotCommand;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.*;
+import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FastByteArrayInputStream;
 import org.apache.cassandra.io.util.FastByteArrayOutputStream;
-import org.apache.cassandra.net.CompactEndpointSerializationHelper;
-import org.apache.cassandra.net.IAsyncCallback;
-import org.apache.cassandra.net.IVerbHandler;
-import org.apache.cassandra.net.Message;
-import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.*;
 import org.apache.cassandra.streaming.*;
 import org.apache.cassandra.utils.*;
 
@@ -787,6 +781,10 @@ public class AntiEntropyService
                 activeJobs.remove(differencer.cfname);
                 String remaining = activeJobs.size() == 0 ? "" : String.format(" (%d remaining column family to sync for this session)", activeJobs.size());
                 logger.info(String.format("[repair #%s] %s is fully synced%s", getName(), differencer.cfname, remaining));
+
+                // send and wait RepairSuccess for synced keyspace/CF/range
+                job.sendRepairSuccess();
+
                 if (activeJobs.isEmpty())
                     completed.signalAll();
             }
@@ -844,6 +842,7 @@ public class AntiEntropyService
             private final RequestCoordinator<Differencer> differencers;
             private final Condition requestsSent = new SimpleCondition();
             private CountDownLatch snapshotLatch = null;
+            private CountDownLatch successResponses = null;
 
             public RepairJob(String cfname)
             {
@@ -914,6 +913,34 @@ public class AntiEntropyService
                 }
             }
 
+            public void sendRepairSuccess()
+            {
+                try
+                {
+                    successResponses = new CountDownLatch(endpoints.size());
+                    IAsyncCallback callback = new IAsyncCallback()
+                    {
+                        public boolean isLatencyForSnitch() { return false; }
+
+                        public void response(Message msg)
+                        {
+                            RepairJob.this.successResponses.countDown();
+                        }
+                    };
+                    RepairSuccess success = new RepairSuccess(tablename, cfname, range, System.currentTimeMillis());
+                    // store repair success for coordinator
+                    SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
+                    for (InetAddress endpoint : endpoints)
+                        MessagingService.instance().sendRR(success, endpoint, callback);
+                    successResponses.await();
+                    successResponses = null;
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }
+
             /**
              * Add a new received tree and return the number of remaining tree to
              * be received for the job to be complete.
@@ -973,6 +1000,11 @@ public class AntiEntropyService
                 {
                     while (snapshotLatch.getCount() > 0)
                         snapshotLatch.countDown();
+                }
+                if (successResponses != null)
+                {
+                    while (successResponses.getCount() > 0)
+                        successResponses.countDown();
                 }
             }
         }
@@ -1174,5 +1206,71 @@ public class AntiEntropyService
             }
         }
 
+    }
+
+    public static class RepairSuccess implements MessageProducer
+    {
+        public final String keyspace;
+        public final String columnFamily;
+        public final Range<Token> range;
+        public final long succeedAt;
+
+        public RepairSuccess(String keyspace, String columnFamily, Range<Token> range, long succeedAt)
+        {
+            this.keyspace = keyspace;
+            this.columnFamily = columnFamily;
+            this.range = range;
+            this.succeedAt = succeedAt;
+        }
+
+        public Message getMessage(Integer version) throws IOException
+        {
+            DataOutputBuffer out = new DataOutputBuffer();
+            out.writeUTF(keyspace);
+            out.writeUTF(columnFamily);
+            Range.serializer().serialize(range, out, MessagingService.version_);
+            out.writeLong(succeedAt);
+
+            /*
+             * We use deprecated and not used STREAM_INITIATE in this version,
+             * so that we don't need to update messaging version
+             */
+            return new Message(FBUtilities.getBroadcastAddress(),
+                                      StorageService.Verb.STREAM_INITIATE,
+                                      Arrays.copyOf(out.getData(), out.getLength()),
+                                      version);
+        }
+    }
+
+    public static class RepairSuccessVerbHandler implements IVerbHandler
+    {
+        public void doVerb(Message message, String id)
+        {
+            byte[] bytes = message.getMessageBody();
+
+            DataInputStream buffer = new DataInputStream(new FastByteArrayInputStream(bytes));
+            try
+            {
+                RepairSuccess success = deserialize(buffer, message.getVersion());
+                logger.info("Received repair success for {}/{}, {} at {}", new Object[]{success.keyspace, success.columnFamily, success.range, success.succeedAt});
+                SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
+
+                Message response = message.getReply(FBUtilities.getBroadcastAddress(), new byte[0], MessagingService.version_);
+                MessagingService.instance().sendReply(response, id, message.getFrom());
+            }
+            catch (IOException e)
+            {
+                throw new IOError(e);
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        public RepairSuccess deserialize(DataInput in, int version) throws IOException
+        {
+            return new RepairSuccess(in.readUTF(),
+                                     in.readUTF(),
+                                     (Range<Token>) Range.serializer().deserialize(in, version),
+                                     in.readLong());
+        }
     }
 }

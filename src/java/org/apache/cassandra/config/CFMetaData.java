@@ -160,6 +160,28 @@ public final class CFMetaData
                                           ColumnDefinition.ascii("component_index", 2));
     }
 
+    /**
+     * Something like:
+     *
+     * CREATE TABLE repair_history (
+     *     keyspace_name text,
+     *     columnfamily_name text,
+     *     range blob, // serialized Range object
+     *     succeed_at timestamp,
+     *     PRIMARY KEY ((keyspace_name, columnfamily_name), range)
+     * )
+     * Though 1.1 CQL3 does not support composite partition key, so keyspace_name key alias is omitted.
+     */
+    public static final CFMetaData RepairHistoryCf = newSystemMetadata(SystemTable.REPAIR_HISTORY_CF,
+                                                                       11,
+                                                                       "Last successful repair",
+                                                                       CompositeType.getInstance(Arrays.<AbstractType<?>>asList(BytesType.instance, UTF8Type.instance)),
+                                                                       null)
+                                                     .keyValidator(CompositeType.getInstance(Arrays.<AbstractType<?>>asList(UTF8Type.instance, UTF8Type.instance)))
+                                                     .keyAlias("columnfamily_name")
+                                                     .columnAliases(Arrays.asList(ByteBufferUtil.bytes("range"), ByteBufferUtil.bytes("succeed_at")))
+                                                     .columnMetadata(new ColumnDefinition(ByteBufferUtil.bytes("succeed_at"), DateType.instance, null, null, null, 1));
+
     public enum Caching
     {
         ALL, KEYS_ONLY, ROWS_ONLY, NONE;

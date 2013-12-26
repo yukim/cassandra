@@ -32,6 +32,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.compaction.CompactionManager.CompactionExecutorStatsCollector;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -102,6 +103,7 @@ public class CompactionTask extends AbstractCompactionTask
             assert sstable.descriptor.cfname.equals(cfs.columnFamily);
 
         CompactionController controller = new CompactionController(cfs, toCompact, gcBefore, isUserDefined);
+        controller.addLastSuccessfulRepair(SystemTable.getLastSuccessfulRepair(cfs.metadata.ksName, cfs.columnFamily));
         // new sstables from flush can be added during a compaction, but only the compaction can remove them,
         // so in our single-threaded compaction world this is a valid way of determining if we're compacting
         // all the sstables (that existed when we started)

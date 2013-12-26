@@ -67,19 +67,19 @@ public class PrecompactedRow extends AbstractCompactedRow
         // taking this into account.
         Boolean shouldPurge = null;
 
-        if (cf.hasIrrelevantData(controller.gcBefore))
+        if (cf.hasIrrelevantData(controller.gcBefore(key.getToken())))
             shouldPurge = controller.shouldPurge(key);
         // We should only gc tombstone if shouldPurge == true. But otherwise,
         // it is still ok to collect column that shadowed by their (deleted)
         // container, which removeDeleted(cf, Integer.MAX_VALUE) will do
-        ColumnFamily compacted = ColumnFamilyStore.removeDeleted(cf, shouldPurge != null && shouldPurge ? controller.gcBefore : Integer.MIN_VALUE);
+        ColumnFamily compacted = ColumnFamilyStore.removeDeleted(cf, shouldPurge != null && shouldPurge ? controller.gcBefore(key.getToken()) : Integer.MIN_VALUE);
 
         if (compacted != null && compacted.metadata().getDefaultValidator().isCommutative())
         {
             if (shouldPurge == null)
                 shouldPurge = controller.shouldPurge(key);
             if (shouldPurge)
-                CounterColumn.mergeAndRemoveOldShards(key, compacted, controller.gcBefore, controller.mergeShardBefore);
+                CounterColumn.mergeAndRemoveOldShards(key, compacted, controller.gcBefore(key.getToken()), controller.mergeShardBefore);
         }
 
         return compacted;
@@ -88,9 +88,9 @@ public class PrecompactedRow extends AbstractCompactedRow
     public static ColumnFamily removeDeletedAndOldShards(DecoratedKey key, boolean shouldPurge, CompactionController controller, ColumnFamily cf)
     {
         // See comment in preceding method
-        ColumnFamily compacted = ColumnFamilyStore.removeDeleted(cf, shouldPurge ? controller.gcBefore : Integer.MIN_VALUE);
+        ColumnFamily compacted = ColumnFamilyStore.removeDeleted(cf, shouldPurge ? controller.gcBefore(key.getToken()) : Integer.MIN_VALUE);
         if (shouldPurge && compacted != null && compacted.metadata().getDefaultValidator().isCommutative())
-            CounterColumn.mergeAndRemoveOldShards(key, compacted, controller.gcBefore, controller.mergeShardBefore);
+            CounterColumn.mergeAndRemoveOldShards(key, compacted, controller.gcBefore(key.getToken()), controller.mergeShardBefore);
         return compacted;
     }
 

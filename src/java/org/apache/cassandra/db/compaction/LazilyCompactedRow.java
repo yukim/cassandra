@@ -157,7 +157,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
     public boolean isEmpty()
     {
         boolean cfIrrelevant = shouldPurge
-                             ? ColumnFamilyStore.removeDeletedCF(emptyColumnFamily, controller.gcBefore) == null
+                             ? ColumnFamilyStore.removeDeletedCF(emptyColumnFamily, controller.gcBefore(key.getToken())) == null
                              : !emptyColumnFamily.isMarkedForDelete(); // tombstones are relevant
         return cfIrrelevant && columnCount == 0;
     }

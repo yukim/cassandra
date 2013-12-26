@@ -26,25 +26,30 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
+import com.google.common.io.ByteArrayDataOutput;
+import com.google.common.io.ByteStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql.QueryProcessor;
+import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
-import org.apache.cassandra.db.marshal.AsciiType;
-import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.Constants;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.NodeId;
+
+import static org.apache.cassandra.cql3.QueryProcessor.resultify;
 
 public class SystemTable
 {
@@ -57,6 +62,7 @@ public class SystemTable
     public static final String SCHEMA_KEYSPACES_CF = "schema_keyspaces";
     public static final String SCHEMA_COLUMNFAMILIES_CF = "schema_columnfamilies";
     public static final String SCHEMA_COLUMNS_CF = "schema_columns";
+    public static final String REPAIR_HISTORY_CF = "repair_history";
 
     private static final ByteBuffer LOCATION_KEY = ByteBufferUtil.bytes("L");
     private static final ByteBuffer RING_KEY = ByteBufferUtil.bytes("Ring");
@@ -617,5 +623,103 @@ public class SystemTable
                                                         Integer.MAX_VALUE);
 
         return new Row(key, result);
+    }
+
+    /**
+     * Store last successful repair for given keyspace/columnfamily/range at timestamp.
+     *
+     * @param keyspace Keyspace name
+     * @param columnFamily ColumnFamily name
+     * @param range Repaired range
+     * @param timestamp Timestamp at last successful repair
+     */
+    public static void updateLastSuccessfulRepair(String keyspace, String columnFamily, Range<Token> range, long timestamp)
+    {
+        RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, createRepairHistoryKey(keyspace, columnFamily));
+
+        // construct cell name
+        CompositeType t = CompositeType.getInstance(Arrays.<AbstractType<?>>asList(BytesType.instance, DateType.instance));
+        CompositeType.Builder builder = new CompositeType.Builder(t);
+        builder.add(rangeToByteBuffer(range)).add(ByteBufferUtil.bytes("succeed_at"));
+
+        ColumnFamily cf = ColumnFamily.create(Table.SYSTEM_TABLE, REPAIR_HISTORY_CF);
+        cf.addColumn(new Column(builder.build(),
+                                ByteBufferUtil.bytes(timestamp),
+                                FBUtilities.timestampMicros()));
+        rm.add(cf);
+        try
+        {
+            rm.apply();
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+    }
+
+    /**
+     * Get last successful repair for given keyspace/columnfamily in Range
+     *
+     * @param keyspace Keyspace name
+     * @param columnFamily ColumnFamily name
+     * @return Range to succeeded timestamp map
+     */
+    public static Map<Range<Token>, Integer> getLastSuccessfulRepair(String keyspace, String columnFamily)
+    {
+        Map<Range<Token>, Integer> results = new HashMap<Range<Token>, Integer>();
+
+        ColumnFamilyStore cfs = Table.open(Table.SYSTEM_TABLE).getColumnFamilyStore(REPAIR_HISTORY_CF);
+        DecoratedKey key = cfs.partitioner.decorateKey(createRepairHistoryKey(keyspace, columnFamily));
+
+        // get all data in partition
+        QueryFilter filter = QueryFilter.getIdentityFilter(key, new QueryPath(REPAIR_HISTORY_CF));
+        ColumnFamily cf = cfs.getColumnFamily(filter);
+        UntypedResultSet resultSet = resultify(String.format("SELECT * FROM %s.%s", Table.SYSTEM_TABLE, REPAIR_HISTORY_CF),
+                                               new Row(key, cf));
+
+        for (UntypedResultSet.Row row : resultSet)
+        {
+            Range<Token> range = byteBufferToRange(row.getBytes("range"));
+            // store time stamp in seconds
+            int succeedAt = (int) (DateType.instance.compose(row.getBytes("succeed_at")).getTime() / 1000);
+            results.put(range, succeedAt);
+        }
+        return results;
+    }
+
+    private static ByteBuffer rangeToByteBuffer(Range<Token> range)
+    {
+        try
+        {
+            ByteArrayDataOutput out = ByteStreams.newDataOutput();
+            Range.serializer().serialize(range, out, MessagingService.version_);
+            return ByteBuffer.wrap(out.toByteArray());
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Range<Token> byteBufferToRange(ByteBuffer rawRange)
+    {
+        try
+        {
+            return (Range<Token>) Range.serializer().deserialize(ByteStreams.newDataInput(ByteBufferUtil.getArray(rawRange)), MessagingService.version_);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+    }
+
+    private static ByteBuffer createRepairHistoryKey(String keyspace, String columnFamily)
+    {
+        // construct partition key from given keyspace/columnfamily name
+        CompositeType t = CompositeType.getInstance(Arrays.<AbstractType<?>>asList(UTF8Type.instance, UTF8Type.instance));
+        CompositeType.Builder builder = new CompositeType.Builder(t);
+        builder.add(ByteBufferUtil.bytes(keyspace)).add(ByteBufferUtil.bytes(columnFamily));
+        return builder.build();
     }
 }

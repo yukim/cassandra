@@ -23,12 +23,19 @@ package org.apache.cassandra.db;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Map;
 
 import com.google.common.base.Charsets;
 import org.junit.Test;
 
 import org.apache.cassandra.dht.BytesToken;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.utils.ByteBufferUtil;
+
+import static org.apache.cassandra.Util.token;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class SystemTableTest
 {
@@ -51,5 +58,32 @@ public class SystemTableTest
         assert SystemTable.loadTokens().get(token).equals(address);
         SystemTable.removeToken(token);
         assert !SystemTable.loadTokens().containsKey(token);
+    }
+
+    @Test
+    public void testLastSuccessfulRepair()
+    {
+        String ks = "Keyspace1";
+        String cf = "Standard1";
+
+        // save last successful repair
+        Range<Token> range = new Range<Token>(token("a"), token("e"));
+        long ts = System.currentTimeMillis();
+        SystemTable.updateLastSuccessfulRepair(ks, cf, range, ts);
+
+        // make sure we can read them back
+        Map<Range<Token>, Integer> lastSuccessfulRepair = SystemTable.getLastSuccessfulRepair(ks, cf);
+        assertTrue(lastSuccessfulRepair.containsKey(range));
+        // we should get ts in seconds
+        assertEquals((int) (ts / 1000), lastSuccessfulRepair.get(range).intValue());
+
+        // update timestamp
+        ts += 36000;
+        SystemTable.updateLastSuccessfulRepair(ks, cf, range, ts);
+        lastSuccessfulRepair = SystemTable.getLastSuccessfulRepair(ks, cf);
+        assertEquals(1, lastSuccessfulRepair.size());
+        assertTrue(lastSuccessfulRepair.containsKey(range));
+        // we should get ts in seconds
+        assertEquals((int) (ts / 1000), lastSuccessfulRepair.get(range).intValue());
     }
 }
