@@ -843,6 +843,7 @@ public class AntiEntropyService
             private final Condition requestsSent = new SimpleCondition();
             private CountDownLatch snapshotLatch = null;
             private CountDownLatch successResponses = null;
+            private volatile long repairJobStartTime;
 
             public RepairJob(String cfname)
             {
@@ -871,6 +872,8 @@ public class AntiEntropyService
                 // send requests to all nodes
                 List<InetAddress> allEndpoints = new ArrayList<InetAddress>(endpoints);
                 allEndpoints.add(FBUtilities.getBroadcastAddress());
+
+                repairJobStartTime = System.currentTimeMillis();
 
                 if (isSequential)
                     makeSnapshots(endpoints);
@@ -927,7 +930,7 @@ public class AntiEntropyService
                             RepairJob.this.successResponses.countDown();
                         }
                     };
-                    RepairSuccess success = new RepairSuccess(tablename, cfname, range, System.currentTimeMillis());
+                    RepairSuccess success = new RepairSuccess(tablename, cfname, range, repairJobStartTime);
                     // store repair success for coordinator
                     SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
                     for (InetAddress endpoint : endpoints)
