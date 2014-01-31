@@ -253,4 +253,9 @@ public interface ColumnFamilyStoreMBean
      * @return the number of SSTables in L0.  Always return 0 if Leveled compaction is not enabled.
      */
     public int getUnleveledSSTables();
+
+    /**
+     * @return the effective gcgs time for this CF (see CompactionController.gcBefore)
+     */
+    public long getGCBeforeSeconds();
 }
