@@ -118,7 +118,8 @@ public class ScrubTest extends SchemaLoader
         cfs.forceBlockingFlush();
 
         CompactionManager.instance.performScrub(cfs);
-        assert cfs.getSSTables().isEmpty();
+        // this version of scrub does not drop tombstones
+        assert !cfs.getSSTables().isEmpty();
     }
 
     @Test

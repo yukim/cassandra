@@ -251,6 +251,69 @@ public class AntiEntropyService
         }
     }
 
+    static class RepairSuccessSerializer implements IVersionedSerializer<RepairSuccess>
+    {
+        public void serialize(RepairSuccess repairSuccess, DataOutput dos, int version) throws IOException
+        {
+            dos.writeUTF(repairSuccess.keyspace);
+            dos.writeUTF(repairSuccess.columnFamily);
+            Range.serializer.serialize(repairSuccess.range, dos, version);
+            dos.writeLong(repairSuccess.succeedAt);
+        }
+
+        public RepairSuccess deserialize(DataInput dis, int version) throws IOException
+        {
+            String keyspace = dis.readUTF();
+            String column_family = dis.readUTF();
+            Range<Token> range = (Range<Token>) Range.serializer.deserialize(dis, version);
+            long succeedAt = dis.readLong();
+            return new RepairSuccess(keyspace, column_family, range, succeedAt);
+        }
+
+        public long serializedSize(RepairSuccess sc, int version)
+        {
+            return TypeSizes.NATIVE.sizeof(sc.keyspace)
+                    + TypeSizes.NATIVE.sizeof(sc.columnFamily)
+                    + TypeSizes.NATIVE.sizeof(Range.serializer.serializedSize(sc.range, version))
+                    + TypeSizes.NATIVE.sizeof(sc.succeedAt);
+        }
+    }
+
+    public static class RepairSuccess
+    {
+        public static final RepairSuccessSerializer serializer = new RepairSuccessSerializer();
+
+        public final String keyspace;
+        public final String columnFamily;
+        public final Range<Token> range;
+        public final long succeedAt;
+
+        public RepairSuccess(String keyspace, String columnFamily, Range<Token> range, long succeedAt)
+        {
+            this.keyspace = keyspace;
+            this.columnFamily = columnFamily;
+            this.range = range;
+            this.succeedAt = succeedAt;
+        }
+
+        public MessageOut createMessage()
+        {
+            return new MessageOut<RepairSuccess>(MessagingService.Verb.STREAM_INITIATE, this, serializer);
+
+        }
+    }
+
+    public static class RepairSuccessVerbHandler implements IVerbHandler<RepairSuccess>
+    {
+        public void doVerb(MessageIn<RepairSuccess> message, String id)
+        {
+            RepairSuccess success = message.payload;
+            logger.info("Received repair success for {}/{}, {} at {}", new Object[]{success.keyspace, success.columnFamily, success.range, success.succeedAt});
+            SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
+            MessagingService.instance().sendReply(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), id, message.from);
+        }
+    }
+
     /**
      * A Strategy to handle building and validating a merkle tree for a column family.
      *
@@ -762,6 +825,9 @@ public class AntiEntropyService
                 activeJobs.remove(differencer.cfname);
                 String remaining = activeJobs.size() == 0 ? "" : String.format(" (%d remaining column family to sync for this session)", activeJobs.size());
                 logger.info(String.format("[repair #%s] %s is fully synced%s", getName(), differencer.cfname, remaining));
+
+                job.sendRepairSuccess();
+
                 if (activeJobs.isEmpty())
                     completed.signalAll();
             }
@@ -819,6 +885,8 @@ public class AntiEntropyService
             private final RequestCoordinator<Differencer> differencers;
             private final Condition requestsSent = new SimpleCondition();
             private CountDownLatch snapshotLatch = null;
+            private CountDownLatch successResponses = null;
+            private volatile long repairJobStartTime;
 
             public RepairJob(String cfname)
             {
@@ -847,6 +915,8 @@ public class AntiEntropyService
                 // send requests to all nodes
                 List<InetAddress> allEndpoints = new ArrayList<InetAddress>(endpoints);
                 allEndpoints.add(FBUtilities.getBroadcastAddress());
+
+                repairJobStartTime = System.currentTimeMillis();
 
                 if (isSequential)
                     makeSnapshots(endpoints);
@@ -886,6 +956,38 @@ public class AntiEntropyService
                     throw new RuntimeException(e);
                 }
             }
+
+
+            public void sendRepairSuccess()
+            {
+                try
+                {
+                     successResponses = new CountDownLatch(endpoints.size());
+                     IAsyncCallback callback = new IAsyncCallback()
+                     {
+                        public boolean isLatencyForSnitch() { return false; }
+
+                        public void response(MessageIn msg)
+                        {
+                            RepairJob.this.successResponses.countDown();
+                        }
+                     };
+
+                     RepairSuccess success = new RepairSuccess(tablename, cfname, range, repairJobStartTime);
+                     // store repair success for coordinator
+                     SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
+                     for (InetAddress endpoint : endpoints)
+                        MessagingService.instance().sendRR(success.createMessage(), endpoint, callback);
+
+                    successResponses.await();
+                    successResponses = null;
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }
+
 
             /**
              * Add a new received tree and return the number of remaining tree to
@@ -947,6 +1049,12 @@ public class AntiEntropyService
                     while (snapshotLatch.getCount() > 0)
                         snapshotLatch.countDown();
                 }
+
+                if (successResponses != null)
+                {
+                    while (successResponses.getCount() > 0)
+                        successResponses.countDown();
+                 }
             }
         }
 

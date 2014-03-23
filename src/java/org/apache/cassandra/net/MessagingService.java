@@ -140,6 +140,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.BOOTSTRAP_TOKEN, Stage.MISC);
         put(Verb.TREE_REQUEST, Stage.ANTI_ENTROPY);
         put(Verb.TREE_RESPONSE, Stage.ANTI_ENTROPY);
+        put(Verb.STREAM_INITIATE, Stage.ANTI_ENTROPY);
         put(Verb.STREAMING_REPAIR_REQUEST, Stage.ANTI_ENTROPY);
         put(Verb.STREAMING_REPAIR_RESPONSE, Stage.ANTI_ENTROPY);
         put(Verb.GOSSIP_DIGEST_ACK, Stage.GOSSIP);
@@ -193,6 +194,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.REPLICATION_FINISHED, null);
         put(Verb.COUNTER_MUTATION, CounterMutation.serializer);
         put(Verb.SNAPSHOT, SnapshotCommand.serializer);
+        put(Verb.STREAM_INITIATE, AntiEntropyService.RepairSuccess.serializer);
     }};
 
     /**

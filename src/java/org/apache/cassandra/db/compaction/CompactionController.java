@@ -17,29 +17,19 @@
  */
 package org.apache.cassandra.db.compaction;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
-import com.google.common.primitives.Ints;
-import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.DataTracker;
-import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.service.CacheService;
-import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.AlwaysPresentFilter;
-import org.apache.cassandra.utils.Throttle;
-import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.utils.Throttle;
 
 /**
  * Manage compaction options.
@@ -51,8 +41,9 @@ public class CompactionController
     public final ColumnFamilyStore cfs;
     private final DataTracker.SSTableIntervalTree overlappingTree;
     private final Set<SSTableReader> overlappingSSTables;
+    private final Map<Range<Token>, Integer> lastSuccessfulRepair = new HashMap<Range<Token>, Integer>();
 
-    public final int gcBefore;
+    private final int gcBefore;
     public final int mergeShardBefore;
 
     public CompactionController(ColumnFamilyStore cfs, Collection<SSTableReader> sstables, int gcBefore)
@@ -96,6 +87,41 @@ public class CompactionController
         return cfs.columnFamily;
     }
 
+    public void addLastSuccessfulRepair(Map<Range<Token>, Integer> lastSuccessfulRepair)
+    {
+        this.lastSuccessfulRepair.putAll(lastSuccessfulRepair);
+    }
+
+    /**
+     * Returns timestamp in seconds that, compaction can purge tombstones *before* this timestamp.
+     * If given Token {@code t} is found in the range of last successful repair, this returns
+     * Min("Actual GC timestamp", "Last successful repair timestamp for t").
+     * If Token {@code t} is not found in any ranges of last successful repair, then this returns
+     * Integer.MIN_VALUE so that not repaired partition won't drop tombstones.
+     *
+     * @param t Token of partition key
+     * @return timestamp for gc
+     */
+    public int gcBefore(Token t)
+    {
+        // special case system keyspace since it won't get repaired
+        if (Table.SYSTEM_KS.equals(cfs.metadata.ksName))
+            return gcBefore;
+
+        assert t != null;
+        int lastRepairTime = Integer.MIN_VALUE;
+        for (Range<Token> range : lastSuccessfulRepair.keySet())
+        {
+            if (range.contains(t))
+            {
+                lastRepairTime = lastSuccessfulRepair.get(range);
+                break;
+            }
+        }
+
+        return Math.min(lastRepairTime, gcBefore);
+    }
+
     /**
      * @return true if it's okay to drop tombstones for the given row, i.e., if we know all the verisons of the row
      * are included in the compaction set
@@ -134,7 +160,7 @@ public class CompactionController
 
         ColumnFamily cachedRow = cfs.getRawCachedRow(key);
         if (cachedRow != null)
-            ColumnFamilyStore.removeDeleted(cachedRow, gcBefore);
+            ColumnFamilyStore.removeDeleted(cachedRow, gcBefore(key.getToken()));
     }
 
     /**

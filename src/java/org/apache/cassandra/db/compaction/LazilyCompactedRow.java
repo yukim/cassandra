@@ -168,7 +168,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements Iterable
     public boolean isEmpty()
     {
         boolean cfIrrelevant = shouldPurge
-                             ? ColumnFamilyStore.removeDeletedCF(emptyColumnFamily, controller.gcBefore) == null
+                             ? ColumnFamilyStore.removeDeletedCF(emptyColumnFamily, controller.gcBefore(key.getToken())) == null
                              : !emptyColumnFamily.isMarkedForDelete(); // tombstones are relevant
         return cfIrrelevant && columnStats.columnCount == 0;
     }
@@ -270,7 +270,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements Iterable
                 RangeTombstone t = tombstone;
                 tombstone = null;
 
-                if (t.data.isGcAble(controller.gcBefore))
+                if (t.data.isGcAble(controller.gcBefore(key.getToken())))
                 {
                     return null;
                 }

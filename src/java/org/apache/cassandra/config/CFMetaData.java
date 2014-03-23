@@ -228,6 +228,14 @@ public final class CFMetaData
                                                           + "requested_at timestamp"
                                                           + ") WITH COMMENT='ranges requested for transfer here'");
 
+    public static final CFMetaData RepairHistoryCf = compile(11, "CREATE TABLE " + SystemTable.REPAIR_HISTORY_CF + " ("
+                                                                 + "keyspace_name text,"
+                                                                 + "columnfamily_name text,"
+                                                                 + "range blob,"
+                                                                 + "succeed_at timestamp,"
+                                                                 + "PRIMARY KEY ((keyspace_name, columnfamily_name), range)"
+                                                                 + ") WITH COMMENT='Last successful repair'");
+
     public enum Caching
     {
         ALL, KEYS_ONLY, ROWS_ONLY, NONE;

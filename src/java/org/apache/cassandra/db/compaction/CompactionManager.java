@@ -903,8 +903,15 @@ public class CompactionManager implements CompactionManagerMBean
         {
             super(OperationType.VALIDATION,
                   cfs.getCompactionStrategy().getScanners(sstables, range),
-                  new ValidationCompactionController(cfs, gcBefore));
+                  getValidationCompactionController(cfs, gcBefore));
         }
+
+        private static ValidationCompactionController getValidationCompactionController(ColumnFamilyStore cfs, int gcBefore)
+        {
+            final ValidationCompactionController controller = new ValidationCompactionController(cfs, gcBefore);
+            controller.addLastSuccessfulRepair(SystemTable.getLastSuccessfulRepair(cfs.metadata.ksName, cfs.columnFamily));
+            return controller;
+    }
     }
 
     /*

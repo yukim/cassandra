@@ -17,14 +17,15 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
+import com.google.common.io.ByteArrayDataOutput;
+import com.google.common.io.ByteStreams;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.SetMultimap;
 import org.slf4j.Logger;
@@ -42,15 +43,13 @@ import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.Constants;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.CounterId;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.*;
 
 import static org.apache.cassandra.cql3.QueryProcessor.processInternal;
 
@@ -71,6 +70,7 @@ public class SystemTable
     public static final String SCHEMA_KEYSPACES_CF = "schema_keyspaces";
     public static final String SCHEMA_COLUMNFAMILIES_CF = "schema_columnfamilies";
     public static final String SCHEMA_COLUMNS_CF = "schema_columns";
+    public static final String REPAIR_HISTORY_CF = "repair_history";
 
     @Deprecated
     public static final String OLD_STATUS_CF = "LocationInfo";
@@ -831,5 +831,69 @@ public class SystemTable
                                                         Integer.MAX_VALUE);
 
         return new Row(key, result);
+    }
+
+    /**
+     * Store last successful repair for given keyspace/columnfamily/range at timestamp.
+     *
+     * @param keyspace Keyspace name
+     * @param columnFamily ColumnFamily name
+     * @param range Repaired range
+     * @param timestamp Timestamp at last successful repair
+     */
+    public static void updateLastSuccessfulRepair(String keyspace, String columnFamily, Range<Token> range, long timestamp)
+    {
+        String cql = "INSERT INTO system.%s (keyspace_name, columnfamily_name, range, succeed_at) VALUES ('%s', '%s', 0x%s, %s)";
+        processInternal(String.format(cql, REPAIR_HISTORY_CF, keyspace, columnFamily, Hex.bytesToHex(rangeToBytes(range)), timestamp));
+    }
+
+    /**
+     * Get last successful repair for given keyspace/columnfamily in Range
+     *
+     * @param keyspace Keyspace name
+     * @param columnFamily ColumnFamily name
+     * @return Range to succeeded timestamp map
+     */
+    public static Map<Range<Token>, Integer> getLastSuccessfulRepair(String keyspace, String columnFamily)
+    {
+        Map<Range<Token>, Integer> results = new HashMap<Range<Token>, Integer>();
+
+        String req = "SELECT * FROM system.%s WHERE keyspace_name='%s' AND columnfamily_name='%s'";
+        UntypedResultSet resultSet = processInternal(String.format(req, REPAIR_HISTORY_CF, keyspace, columnFamily));
+        for (UntypedResultSet.Row row : resultSet)
+        {
+            Range<Token> range = byteBufferToRange(row.getBytes("range"));
+            // store time stamp in seconds
+            int succeedAt = (int) (DateType.instance.compose(row.getBytes("succeed_at")).getTime() / 1000);
+            results.put(range, succeedAt);
+        }
+        return results;
+    }
+
+    private static byte[] rangeToBytes(Range<Token> range)
+    {
+        try
+        {
+            ByteArrayDataOutput out = ByteStreams.newDataOutput();
+            Range.serializer.serialize(range, out, MessagingService.current_version);
+            return out.toByteArray();
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Range<Token> byteBufferToRange(ByteBuffer rawRange)
+    {
+        try
+        {
+            return (Range<Token>) Range.serializer.deserialize(ByteStreams.newDataInput(ByteBufferUtil.getArray(rawRange)), MessagingService.current_version);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
     }
 }

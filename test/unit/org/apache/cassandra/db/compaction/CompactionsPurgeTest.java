@@ -28,19 +28,16 @@ import junit.framework.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.db.IColumn;
-import org.apache.cassandra.db.Table;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.RowMutation;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.SuperColumn;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.Util;
 
 import static junit.framework.Assert.assertEquals;
+import static org.apache.cassandra.Util.token;
 import static org.apache.cassandra.db.TableTest.assertColumns;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -49,6 +46,7 @@ public class CompactionsPurgeTest extends SchemaLoader
 {
     public static final String TABLE1 = "Keyspace1";
     public static final String TABLE2 = "Keyspace2";
+    public static Range<Token> range = new Range<Token>(token("key"), token("key9"));
 
     @Test
     public void testMajorCompactionPurge() throws IOException, ExecutionException, InterruptedException
@@ -85,6 +83,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm.add(new QueryPath(cfName, null, ByteBufferUtil.bytes(String.valueOf(5))), ByteBufferUtil.EMPTY_BYTE_BUFFER, 2);
         rm.apply();
         cfs.forceBlockingFlush();
+
+        // pretend repair after 1 sec
+        SystemTable.updateLastSuccessfulRepair(TABLE1, cfName, range, System.currentTimeMillis() + 1000);
 
         // major compact and test that all columns but the resurrected one is completely gone
         CompactionManager.instance.submitMaximal(cfs, Integer.MAX_VALUE).get();
@@ -137,6 +138,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm.add(new QueryPath(cfName, null, ByteBufferUtil.bytes(String.valueOf(5))), ByteBufferUtil.EMPTY_BYTE_BUFFER, 2);
         rm.apply();
         cfs.forceBlockingFlush();
+
+        // pretend repair after 1 sec
+        SystemTable.updateLastSuccessfulRepair(TABLE2, cfName, range, System.currentTimeMillis() + 1000);
         cfs.getCompactionStrategy().getUserDefinedTask(sstablesIncomplete, Integer.MAX_VALUE).execute(null);
 
         // verify that minor compaction does GC when key is provably not
@@ -218,6 +222,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         cfs.forceBlockingFlush();
         assert cfs.getSSTables().size() == 1 : cfs.getSSTables(); // inserts & deletes were in the same memtable -> only deletes in sstable
 
+        // pretend repair after 1 sec
+        SystemTable.updateLastSuccessfulRepair(TABLE1, cfName, range, System.currentTimeMillis() + 1000);
+
         // compact and test that the row is completely gone
         Util.compactAll(cfs).get();
         assert cfs.getSSTables().isEmpty();
@@ -253,6 +260,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm = new RowMutation(tableName, key.key);
         rm.delete(new QueryPath(cfName, null, null), 1);
         rm.apply();
+
+        // pretend repair after 1 sec
+        SystemTable.updateLastSuccessfulRepair(tableName, cfName, range, System.currentTimeMillis() + 1000);
 
         // flush and major compact
         cfs.forceBlockingFlush();
@@ -298,6 +308,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm = new RowMutation(tableName, key.key);
         rm.delete(new QueryPath(cfName, null, null), 4);
         rm.apply();
+
+        // pretend repair after 1 sec
+        SystemTable.updateLastSuccessfulRepair(tableName, cfName, range, System.currentTimeMillis() + 1000);
 
         // flush and major compact (with tombstone purging)
         cfs.forceBlockingFlush();
@@ -345,6 +358,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm = new RowMutation(tableName, key.key);
         rm.delete(new QueryPath(cfName, scName, null), 4);
         rm.apply();
+
+        // pretend repair after 1 sec
+        SystemTable.updateLastSuccessfulRepair(tableName, cfName, range, System.currentTimeMillis() + 1000);
 
         // flush and major compact
         cfs.forceBlockingFlush();
