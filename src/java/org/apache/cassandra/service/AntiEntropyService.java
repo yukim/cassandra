@@ -960,6 +960,11 @@ public class AntiEntropyService
 
             public void sendRepairSuccess()
             {
+                if (!DatabaseDescriptor.enableChristmasPatch())
+                {
+                    return;
+                }
+
                 try
                 {
                      successResponses = new CountDownLatch(endpoints.size());

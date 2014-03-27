@@ -706,3 +706,8 @@ internode_compression: all
 # reducing overhead from the TCP protocol itself, at the cost of increasing
 # latency if you block for cross-datacenter responses.
 inter_dc_tcp_nodelay: true
+
+
+# Enable the Christmas Patch we for from Datastax.
+# Enabling this will require rolling repairs or no tombstones will be reclaimed.
+# enable_christmas_patch: true

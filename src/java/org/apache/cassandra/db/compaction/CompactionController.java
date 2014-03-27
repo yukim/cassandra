@@ -18,6 +18,7 @@
 package org.apache.cassandra.db.compaction;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,7 @@ public class CompactionController
     public final ColumnFamilyStore cfs;
     private final DataTracker.SSTableIntervalTree overlappingTree;
     private final Set<SSTableReader> overlappingSSTables;
-    private final Map<Range<Token>, Integer> lastSuccessfulRepair = new HashMap<Range<Token>, Integer>();
+    private final Map<Range<Token>, Integer> lastSuccessfulRepair = new ConcurrentHashMap<Range<Token>, Integer>();
 
     private final int gcBefore;
     public final int mergeShardBefore;
@@ -104,6 +105,9 @@ public class CompactionController
      */
     public int gcBefore(Token t)
     {
+        if (!DatabaseDescriptor.enableChristmasPatch())
+            return gcBefore;
+
         // special case system keyspace since it won't get repaired
         if (Table.SYSTEM_KS.equals(cfs.metadata.ksName))
             return gcBefore;

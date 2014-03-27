@@ -1143,6 +1143,11 @@ public class DatabaseDescriptor
         return conf.auto_bootstrap;
     }
 
+    public static boolean enableChristmasPatch()
+    {
+        return conf.enable_christmas_patch;
+    }
+
     public static void setHintedHandoffEnabled(boolean hintedHandoffEnabled)
     {
         conf.hinted_handoff_enabled = hintedHandoffEnabled;

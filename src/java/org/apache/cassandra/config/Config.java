@@ -47,6 +47,8 @@ public class Config
 
     public DiskFailurePolicy disk_failure_policy = DiskFailurePolicy.ignore;
 
+    public Boolean enable_christmas_patch = false;
+
     /* initial token in the ring */
     public String initial_token;
     public Integer num_tokens = 1;
