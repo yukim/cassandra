@@ -114,6 +114,7 @@ public class CompactionTask extends AbstractCompactionTask
         // all the sstables (that existed when we started)
         logger.info("Compacting {}", toCompact);
 
+        controller.addLastSuccessfulRepair(SystemKeyspace.getLastSuccessfulRepair(cfs.metadata.ksName, cfs.name));
         long start = System.nanoTime();
         long totalkeysWritten = 0;
 

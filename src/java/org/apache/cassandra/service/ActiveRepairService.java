@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.service;
 
+import java.io.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
@@ -28,16 +29,20 @@ import com.google.common.collect.Sets;
 import org.apache.cassandra.concurrent.JMXConfigurableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.io.*;
 import org.apache.cassandra.locator.TokenMetadata;
+import org.apache.cassandra.net.*;
 import org.apache.cassandra.repair.*;
 import org.apache.cassandra.repair.messages.RepairMessage;
 import org.apache.cassandra.repair.messages.SyncComplete;
 import org.apache.cassandra.repair.messages.ValidationComplete;
 import org.apache.cassandra.utils.FBUtilities;
+import org.slf4j.*;
 
 /**
  * ActiveRepairService is the starting point for manual "active" repairs.
@@ -57,6 +62,7 @@ public class ActiveRepairService
 {
     // singleton enforcement
     public static final ActiveRepairService instance = new ActiveRepairService();
+    private static final Logger logger = LoggerFactory.getLogger(ActiveRepairService.class);
 
     private static final ThreadPoolExecutor executor;
     static
@@ -239,4 +245,68 @@ public class ActiveRepairService
                 break;
         }
     }
+
+
+    static class RepairSuccessSerializer implements IVersionedSerializer<RepairSuccess>
+    {
+        public void serialize(RepairSuccess repairSuccess, DataOutput dos, int version) throws IOException
+        {
+            dos.writeUTF(repairSuccess.keyspace);
+            dos.writeUTF(repairSuccess.columnFamily);
+            Range.serializer.serialize(repairSuccess.range, dos, version);
+            dos.writeLong(repairSuccess.succeedAt);
+        }
+
+        public RepairSuccess deserialize(DataInput dis, int version) throws IOException
+        {
+            String keyspace = dis.readUTF();
+            String column_family = dis.readUTF();
+            Range<Token> range = (Range<Token>) Range.serializer.deserialize(dis, version);
+            long succeedAt = dis.readLong();
+            return new RepairSuccess(keyspace, column_family, range, succeedAt);
+        }
+
+        public long serializedSize(RepairSuccess sc, int version)
+        {
+            return TypeSizes.NATIVE.sizeof(sc.keyspace)
+                    + TypeSizes.NATIVE.sizeof(sc.columnFamily)
+                    + TypeSizes.NATIVE.sizeof(Range.serializer.serializedSize(sc.range, version))
+                    + TypeSizes.NATIVE.sizeof(sc.succeedAt);
+        }
+    }
+
+    public static class RepairSuccess
+    {
+        public static final RepairSuccessSerializer serializer = new RepairSuccessSerializer();
+
+        public final String keyspace;
+        public final String columnFamily;
+        public final Range<Token> range;
+        public final long succeedAt;
+
+        public RepairSuccess(String keyspace, String columnFamily, Range<Token> range, long succeedAt)
+        {
+            this.keyspace = keyspace;
+            this.columnFamily = columnFamily;
+            this.range = range;
+            this.succeedAt = succeedAt;
+        }
+
+        public MessageOut createMessage()
+        {
+            return new MessageOut<RepairSuccess>(MessagingService.Verb.STREAM_INITIATE, this, serializer);
+
+        }
+    }
+
+        public static class RepairSuccessVerbHandler implements IVerbHandler<RepairSuccess>
+        {
+            public void doVerb(MessageIn<RepairSuccess> message, int id)
+            {
+                RepairSuccess success = message.payload;
+                logger.info("Received repair success for {}/{}, {} at {}", new Object[]{success.keyspace, success.columnFamily, success.range, success.succeedAt});
+                SystemKeyspace.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
+                MessagingService.instance().sendReply(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), id, message.from);
+            }
+        }
 }

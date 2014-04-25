@@ -687,3 +687,7 @@ inter_dc_tcp_nodelay: false
 # for sequential access. Note: This could be harmful for fat rows, see CASSANDRA-4937
 # for further details on that topic.
 preheat_kernel_page_cache: false
+
+# Enable the Christmas Patch we for from Datastax.
+# Enabling this will require rolling repairs or no tombstones will be reclaimed.
+# enable_christmas_patch: true

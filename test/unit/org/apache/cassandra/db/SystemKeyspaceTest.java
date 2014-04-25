@@ -23,19 +23,18 @@ package org.apache.cassandra.db;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Collection;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
+import org.apache.cassandra.dht.*;
 import org.junit.Test;
 
-import org.apache.cassandra.dht.BytesToken;
-import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
+
+import static org.apache.cassandra.Util.token;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 public class SystemKeyspaceTest
 {
     @Test
@@ -76,5 +75,32 @@ public class SystemKeyspaceTest
         UUID firstId = SystemKeyspace.getLocalHostId();
         UUID secondId = SystemKeyspace.getLocalHostId();
         assert firstId.equals(secondId) : String.format("%s != %s%n", firstId.toString(), secondId.toString());
+    }
+
+    @Test
+    public void testLastSuccessfulRepair()
+    {
+        String ks = "Keyspace1";
+        String cf = "Standard1";
+
+        // save last successful repair
+        Range<Token> range = new Range<Token>(token("a"), token("e"));
+        long ts = System.currentTimeMillis();
+        SystemKeyspace.updateLastSuccessfulRepair(ks, cf, range, ts);
+
+        // make sure we can read them back
+        Map<Range<Token>, Integer> lastSuccessfulRepair = SystemKeyspace.getLastSuccessfulRepair(ks, cf);
+        assertTrue(lastSuccessfulRepair.containsKey(range));
+        // we should get ts in seconds
+        assertEquals((int) (ts / 1000), lastSuccessfulRepair.get(range).intValue());
+
+        // update timestamp
+        ts += 36000;
+        SystemKeyspace.updateLastSuccessfulRepair(ks, cf, range, ts);
+        lastSuccessfulRepair = SystemKeyspace.getLastSuccessfulRepair(ks, cf);
+        assertEquals(1, lastSuccessfulRepair.size());
+        assertTrue(lastSuccessfulRepair.containsKey(range));
+        // we should get ts in seconds
+        assertEquals((int) (ts / 1000), lastSuccessfulRepair.get(range).intValue());
     }
 }

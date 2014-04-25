@@ -19,17 +19,20 @@ package org.apache.cassandra.repair;
 
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 
 import com.google.common.util.concurrent.*;
+import org.apache.cassandra.config.*;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.net.*;
+import org.apache.cassandra.service.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.ValidationRequest;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MerkleTree;
@@ -58,6 +61,9 @@ public class RepairJob
     /* Count down as sync completes */
     private AtomicInteger waitForSync;
 
+    private CountDownLatch successResponses = null;
+    private volatile long repairJobStartTime;
+
     /**
      * Create repair job to run on specific columnfamily
      */
@@ -76,6 +82,44 @@ public class RepairJob
         };
     }
 
+    public void sendRepairSuccess(Collection<InetAddress> endpoints)
+    {
+        if (!DatabaseDescriptor.enableChristmasPatch())
+        {
+            return;
+        }
+
+        try
+        {
+            successResponses = new CountDownLatch(endpoints.size());
+            IAsyncCallback callback = new IAsyncCallback()
+            {
+                public boolean isLatencyForSnitch()
+                {
+                    return false;
+                }
+
+                public void response(MessageIn msg)
+                {
+                    RepairJob.this.successResponses.countDown();
+                }
+            };
+
+            ActiveRepairService.RepairSuccess success = new ActiveRepairService.RepairSuccess(desc.keyspace, desc.columnFamily, desc.range, repairJobStartTime);
+            // store repair success for coordinator
+            SystemKeyspace.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
+            for (InetAddress endpoint : endpoints)
+                MessagingService.instance().sendRR(success.createMessage(), endpoint, callback);
+
+            successResponses.await();
+            successResponses = null;
+        }
+        catch (InterruptedException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * @return true if this job failed
      */
@@ -92,6 +136,7 @@ public class RepairJob
         // send requests to all nodes
         List<InetAddress> allEndpoints = new ArrayList<>(endpoints);
         allEndpoints.add(FBUtilities.getBroadcastAddress());
+        this.repairJobStartTime = System.currentTimeMillis();
 
         if (isSequential)
         {

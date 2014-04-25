@@ -1143,6 +1143,11 @@ public class DatabaseDescriptor
         return Collections.unmodifiableSet(conf.hinted_handoff_enabled_by_dc);
     }
 
+    public static boolean enableChristmasPatch()
+    {
+        return conf.enable_christmas_patch;
+    }
+
     public static boolean shouldHintByDC()
     {
         return !conf.hinted_handoff_enabled_by_dc.isEmpty();

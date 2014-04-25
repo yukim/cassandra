@@ -26,6 +26,7 @@ import java.util.concurrent.Future;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.Keyspace;
@@ -34,6 +35,9 @@ import org.apache.cassandra.db.RowMutation;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.db.filter.QueryPath;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.Util;
 
@@ -43,6 +47,8 @@ import static org.junit.Assert.assertTrue;
 import static org.apache.cassandra.db.KeyspaceTest.assertColumns;
 import static org.apache.cassandra.cql3.QueryProcessor.processInternal;
 
+import static junit.framework.Assert.assertEquals;
+import static org.apache.cassandra.Util.token;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 
@@ -50,6 +56,7 @@ public class CompactionsPurgeTest extends SchemaLoader
 {
     public static final String KEYSPACE1 = "Keyspace1";
     public static final String KEYSPACE2 = "Keyspace2";
+    public static Range<Token> range = new Range<Token>(token("key"), token("key9"));
 
     @Test
     public void testMajorCompactionPurge() throws IOException, ExecutionException, InterruptedException
@@ -86,6 +93,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm.add(cfName, ByteBufferUtil.bytes(String.valueOf(5)), ByteBufferUtil.EMPTY_BYTE_BUFFER, 2);
         rm.apply();
         cfs.forceBlockingFlush();
+
+        // pretend repair after 1 sec
+        SystemKeyspace.updateLastSuccessfulRepair(KEYSPACE1, cfName, range, System.currentTimeMillis() + 1000);
 
         // major compact and test that all columns but the resurrected one is completely gone
         CompactionManager.instance.submitMaximal(cfs, Integer.MAX_VALUE).get();
@@ -138,6 +148,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm.add(cfName, ByteBufferUtil.bytes(String.valueOf(5)), ByteBufferUtil.EMPTY_BYTE_BUFFER, 2);
         rm.apply();
         cfs.forceBlockingFlush();
+
+        // pretend repair after 1 sec
+        SystemKeyspace.updateLastSuccessfulRepair(KEYSPACE2, cfName, range, System.currentTimeMillis() + 1000);
         cfs.getCompactionStrategy().getUserDefinedTask(sstablesIncomplete, Integer.MAX_VALUE).execute(null);
 
         // verify that minor compaction does GC when key is provably not
@@ -219,6 +232,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         cfs.forceBlockingFlush();
         assert cfs.getSSTables().size() == 1 : cfs.getSSTables(); // inserts & deletes were in the same memtable -> only deletes in sstable
 
+        // pretend repair after 1 sec
+        SystemKeyspace.updateLastSuccessfulRepair(KEYSPACE1, cfName, range, System.currentTimeMillis() + 1000);
+
         // compact and test that the row is completely gone
         Util.compactAll(cfs, Integer.MAX_VALUE).get();
         assert cfs.getSSTables().isEmpty();
@@ -254,6 +270,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         rm = new RowMutation(keyspaceName, key.key);
         rm.delete(cfName, 1);
         rm.apply();
+
+        // pretend repair after 1 sec
+        SystemKeyspace.updateLastSuccessfulRepair(keyspaceName, cfName, range, System.currentTimeMillis() + 1000);
 
         // flush and major compact
         cfs.forceBlockingFlush();
@@ -303,6 +322,9 @@ public class CompactionsPurgeTest extends SchemaLoader
         ColumnFamily cf = cfs.getColumnFamily(filter);
         assertTrue(cf.isMarkedForDelete());
 
+        // pretend repair after 1 sec
+        SystemKeyspace.updateLastSuccessfulRepair(keyspaceName, cfName, range, System.currentTimeMillis() + 1000);
+
         // flush and major compact (with tombstone purging)
         cfs.forceBlockingFlush();
         Util.compactAll(cfs, Integer.MAX_VALUE).get();
@@ -315,6 +337,9 @@ public class CompactionsPurgeTest extends SchemaLoader
             rm.add(cfName, ByteBufferUtil.bytes(String.valueOf(i)), ByteBufferUtil.EMPTY_BYTE_BUFFER, i);
         }
         rm.apply();
+
+        // pretend repair after 1 sec
+        SystemKeyspace.updateLastSuccessfulRepair(keyspaceName, cfName, range, System.currentTimeMillis() + 1000);
 
         // Check that the second insert went in
         cf = cfs.getColumnFamily(filter);

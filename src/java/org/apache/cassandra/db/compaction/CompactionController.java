@@ -18,7 +18,8 @@
 package org.apache.cassandra.db.compaction;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -28,6 +29,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataTracker;
 import org.apache.cassandra.db.DecoratedKey;
@@ -46,9 +50,10 @@ public class CompactionController
     public final ColumnFamilyStore cfs;
     private final DataTracker.SSTableIntervalTree overlappingTree;
     private final Set<SSTableReader> overlappingSSTables;
+    private final Map<Range<Token>, Integer> lastSuccessfulRepair = new ConcurrentHashMap<Range<Token>, Integer>();
     private final Set<SSTableReader> compacting;
 
-    public final int gcBefore;
+    private final int gcBefore;
 
     /**
      * Constructor that subclasses may use when overriding shouldPurge to not need overlappingTree
@@ -144,6 +149,44 @@ public class CompactionController
     public String getColumnFamily()
     {
         return cfs.name;
+    }
+
+    public void addLastSuccessfulRepair(Map<Range<Token>, Integer> lastSuccessfulRepair)
+    {
+        this.lastSuccessfulRepair.putAll(lastSuccessfulRepair);
+    }
+
+    /**
+     * Returns timestamp in seconds that, compaction can purge tombstones *before* this timestamp.
+     * If given Token {@code t} is found in the range of last successful repair, this returns
+     * Min("Actual GC timestamp", "Last successful repair timestamp for t").
+     * If Token {@code t} is not found in any ranges of last successful repair, then this returns
+     * Integer.MIN_VALUE so that not repaired partition won't drop tombstones.
+     *
+     * @param t Token of partition key
+     * @return timestamp for gc
+     */
+    public int gcBefore(Token t)
+    {
+        if (!DatabaseDescriptor.enableChristmasPatch())
+            return gcBefore;
+
+        // special case system keyspace since it won't get repaired
+        if (Keyspace.SYSTEM_KS.equals(cfs.metadata.ksName))
+            return gcBefore;
+
+        assert t != null;
+        int lastRepairTime = Integer.MIN_VALUE;
+        for (Range<Token> range : lastSuccessfulRepair.keySet())
+        {
+            if (range.contains(t))
+            {
+                lastRepairTime = lastSuccessfulRepair.get(range);
+                break;
+            }
+        }
+
+        return Math.min(lastRepairTime, gcBefore);
     }
 
     /**

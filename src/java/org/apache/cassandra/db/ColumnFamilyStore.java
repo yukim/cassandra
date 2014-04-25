@@ -2355,6 +2355,33 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                : null;
     }
 
+    private volatile long gcBeforeSeconds;
+    private volatile long lastCalculatedTime = 0;
+    private static long REFRESH_TIME_MILLIS = 300L * 1000L;
+
+    private long getLastMinRepairSuccessTime()
+    {
+        final Map<Range<Token>, Integer> repairMap = SystemKeyspace.getLastSuccessfulRepair(keyspace.getName(), name);
+        long lowestRepairTime = Long.MAX_VALUE;
+        for (final int repairTime : repairMap.values())
+        {
+            if (repairTime < lowestRepairTime)
+                lowestRepairTime = repairTime;
+        }
+            return lowestRepairTime;
+    }
+
+    public long getGCBeforeSeconds()
+    {
+        if ((System.currentTimeMillis() - lastCalculatedTime) > REFRESH_TIME_MILLIS)
+        {
+            gcBeforeSeconds = ((System.currentTimeMillis() / 1000) - getLastMinRepairSuccessTime());
+            lastCalculatedTime = System.currentTimeMillis();
+        }
+
+            return gcBeforeSeconds;
+    }
+
     public static class ViewFragment
     {
         public final List<SSTableReader> sstables;

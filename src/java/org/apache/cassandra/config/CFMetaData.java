@@ -280,6 +280,14 @@ public final class CFMetaData
                                                                  + "PRIMARY KEY (id)"
                                                                  + ") WITH COMMENT='show all compaction history' AND DEFAULT_TIME_TO_LIVE=604800");
 
+    public static final CFMetaData RepairHistoryCf = compile("CREATE TABLE " + SystemKeyspace.REPAIR_HISTORY_CF + " ("
+                                                                 + "keyspace_name text,"
+                                                                 + "columnfamily_name text,"
+                                                                 + "range blob,"
+                                                                 + "succeed_at timestamp,"
+                                                                 + "PRIMARY KEY ((keyspace_name, columnfamily_name), range)"
+                                                                 + ") WITH COMMENT='Last successful repair'");
+
     public enum Caching
     {
         ALL, KEYS_ONLY, ROWS_ONLY, NONE;

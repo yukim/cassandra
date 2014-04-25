@@ -17,8 +17,7 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -29,9 +28,12 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
+import com.google.common.io.ByteArrayDataOutput;
+import com.google.common.io.ByteStreams;
 
 import org.apache.cassandra.db.compaction.CompactionHistoryTabularData;
 import org.apache.cassandra.metrics.RestorableMeter;
+import org.apache.cassandra.net.*;
 import org.apache.cassandra.transport.Server;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -83,6 +85,7 @@ public class SystemKeyspace
     public static final String PAXOS_CF = "paxos";
     public static final String SSTABLE_ACTIVITY_CF = "sstable_activity";
     public static final String COMPACTION_HISTORY_CF = "compaction_history";
+    public static final String REPAIR_HISTORY_CF = "repair_history";
 
     private static final String LOCAL_KEY = "local";
     private static final ByteBuffer ALL_LOCAL_NODE_ID_KEY = ByteBufferUtil.bytes("Local");
@@ -824,6 +827,71 @@ public class SystemKeyspace
         ColumnFamily result = schemaCFS.getColumnFamily(QueryFilter.getIdentityFilter(key, SCHEMA_KEYSPACES_CF, System.currentTimeMillis()));
 
         return new Row(key, result);
+    }
+
+
+    /**
+     * Store last successful repair for given keyspace/columnfamily/range at timestamp.
+     *
+     * @param keyspace     Keyspace name
+     * @param columnFamily ColumnFamily name
+     * @param range        Repaired range
+     * @param timestamp    Timestamp at last successful repair
+     */
+    public static void updateLastSuccessfulRepair(String keyspace, String columnFamily, Range<Token> range, long timestamp)
+    {
+        String cql = "INSERT INTO system.%s (keyspace_name, columnfamily_name, range, succeed_at) VALUES ('%s', '%s', 0x%s, %s)";
+        processInternal(String.format(cql, REPAIR_HISTORY_CF, keyspace, columnFamily, Hex.bytesToHex(rangeToBytes(range)), timestamp));
+    }
+
+    /**
+     * Get last successful repair for given keyspace/columnfamily in Range
+     *
+     * @param keyspace     Keyspace name
+     * @param columnFamily ColumnFamily name
+     * @return Range to succeeded timestamp map
+     */
+    public static Map<Range<Token>, Integer> getLastSuccessfulRepair(String keyspace, String columnFamily)
+    {
+        Map<Range<Token>, Integer> results = new HashMap<Range<Token>, Integer>();
+
+        String req = "SELECT * FROM system.%s WHERE keyspace_name='%s' AND columnfamily_name='%s'";
+        UntypedResultSet resultSet = processInternal(String.format(req, REPAIR_HISTORY_CF, keyspace, columnFamily));
+        for (UntypedResultSet.Row row : resultSet)
+        {
+            Range<Token> range = byteBufferToRange(row.getBytes("range"));
+            // store time stamp in seconds
+            int succeedAt = (int) (DateType.instance.compose(row.getBytes("succeed_at")).getTime() / 1000);
+            results.put(range, succeedAt);
+        }
+        return results;
+    }
+
+    private static byte[] rangeToBytes(Range<Token> range)
+    {
+        try
+        {
+            ByteArrayDataOutput out = ByteStreams.newDataOutput();
+            Range.serializer.serialize(range, out, MessagingService.current_version);
+            return out.toByteArray();
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Range<Token> byteBufferToRange(ByteBuffer rawRange)
+    {
+        try
+        {
+            return (Range<Token>) Range.serializer.deserialize(ByteStreams.newDataInput(ByteBufferUtil.getArray(rawRange)), MessagingService.current_version);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
     }
 
     /**

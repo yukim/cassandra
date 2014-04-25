@@ -44,6 +44,7 @@ public abstract class RepairMessage
         SYNC_REQUEST(2, SyncRequest.serializer),
         SYNC_COMPLETE(3, SyncComplete.serializer);
 
+
         private final byte type;
         private final MessageSerializer<RepairMessage> serializer;
 

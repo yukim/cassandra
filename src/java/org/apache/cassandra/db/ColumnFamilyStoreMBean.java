@@ -334,6 +334,11 @@ public interface ColumnFamilyStoreMBean
     public int getUnleveledSSTables();
 
     /**
+     * @return the effective gcgs time for this CF (see CompactionController.gcBefore)
+     */
+     public long getGCBeforeSeconds();
+
+    /**
      * @return sstable count for each level. null unless leveled compaction is used.
      *         array index corresponds to level(int[0] is for level 0, ...).
      */

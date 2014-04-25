@@ -216,9 +216,14 @@ public class RepairSession extends WrappedRunnable implements IEndpointStateChan
             RepairJob completedJob = syncingJobs.remove(job.desc.columnFamily);
             String remaining = syncingJobs.size() == 0 ? "" : String.format(" (%d remaining column family to sync for this session)", syncingJobs.size());
             if (completedJob != null && completedJob.isFailed())
+            {
                 logger.warn(String.format("[repair #%s] %s sync failed%s", getId(), desc.columnFamily, remaining));
+            }
             else
+            {
+                job.sendRepairSuccess(endpoints);
                 logger.info(String.format("[repair #%s] %s is fully synced%s", getId(), desc.columnFamily, remaining));
+            }
 
             if (jobs.isEmpty() && syncingJobs.isEmpty())
             {

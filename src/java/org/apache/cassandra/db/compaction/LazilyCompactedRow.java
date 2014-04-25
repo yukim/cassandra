@@ -87,7 +87,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements Iterable
         emptyColumnFamily = EmptyColumns.factory.create(controller.cfs.metadata);
         emptyColumnFamily.delete(maxRowTombstone);
         if (shouldPurge)
-            emptyColumnFamily.purgeTombstones(controller.gcBefore);
+            emptyColumnFamily.purgeTombstones(controller.gcBefore(key.getToken()));
     }
 
     public RowIndexEntry write(long currentPosition, DataOutput out) throws IOException
@@ -246,7 +246,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements Iterable
                 RangeTombstone t = tombstone;
                 tombstone = null;
 
-                if (t.data.isGcAble(controller.gcBefore))
+                if (t.data.isGcAble(controller.gcBefore(key.getToken())))
                 {
                     return null;
                 }

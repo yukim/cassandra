@@ -63,20 +63,20 @@ public class PrecompactedRow extends AbstractCompactedRow
         // taking this into account.
         Boolean shouldPurge = null;
 
-        if (cf.hasIrrelevantData(controller.gcBefore))
+        if (cf.hasIrrelevantData(controller.gcBefore(key.getToken())))
             shouldPurge = controller.shouldPurge(key, cf.maxTimestamp());
 
         // We should only gc tombstone if shouldPurge == true. But otherwise,
         // it is still ok to collect column that shadowed by their (deleted)
         // container, which removeDeleted(cf, Integer.MAX_VALUE) will do
-        return ColumnFamilyStore.removeDeleted(cf, shouldPurge != null && shouldPurge ? controller.gcBefore : Integer.MIN_VALUE);
+        return ColumnFamilyStore.removeDeleted(cf, shouldPurge != null && shouldPurge ? controller.gcBefore(key.getToken()) : Integer.MIN_VALUE);
     }
 
     public static ColumnFamily removeDeleted(DecoratedKey key, boolean shouldPurge, CompactionController controller, ColumnFamily cf)
     {
         // See comment in preceding method
         return ColumnFamilyStore.removeDeleted(cf,
-                                               shouldPurge ? controller.gcBefore : Integer.MIN_VALUE,
+                                               shouldPurge ? controller.gcBefore(key.getToken()) : Integer.MIN_VALUE,
                                                controller.cfs.indexManager.updaterFor(key));
     }
 
