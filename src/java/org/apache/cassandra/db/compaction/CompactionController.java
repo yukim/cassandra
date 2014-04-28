@@ -110,9 +110,21 @@ public class CompactionController
         for (SSTableReader sstable : overlapping)
             minTimestamp = Math.min(minTimestamp, sstable.getMinTimestamp());
 
+        // Check last successful repair for adjusted gcBefore for SSTable
+        Map<Range<Token>, Integer> lastSuccessfulRepair = SystemKeyspace.getLastSuccessfulRepair(cfStore.keyspace.getName(), cfStore.getColumnFamilyName());
         for (SSTableReader candidate : compacting)
         {
-            if (candidate.getSSTableMetadata().maxLocalDeletionTime < gcBefore)
+            int lastRepairTime = Integer.MIN_VALUE;
+            for (Range<Token> range : lastSuccessfulRepair.keySet())
+            {
+                if (range.contains(candidate.first.getToken()) && range.contains(candidate.last.getToken()))
+                {
+                    lastRepairTime = lastSuccessfulRepair.get(range);
+                    break;
+                }
+            }
+
+            if (candidate.getSSTableMetadata().maxLocalDeletionTime < Math.min(lastRepairTime, gcBefore))
                 candidates.add(candidate);
             else
                 minTimestamp = Math.min(minTimestamp, candidate.getMinTimestamp());

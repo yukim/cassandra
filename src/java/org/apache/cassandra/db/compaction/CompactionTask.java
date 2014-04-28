@@ -107,6 +107,7 @@ public class CompactionTask extends AbstractCompactionTask
         UUID taskId = SystemKeyspace.startCompaction(cfs, toCompact);
 
         CompactionController controller = getCompactionController(toCompact);
+        controller.addLastSuccessfulRepair(SystemKeyspace.getLastSuccessfulRepair(cfs.metadata.ksName, cfs.name));
         Set<SSTableReader> actuallyCompact = Sets.difference(toCompact, controller.getFullyExpiredSSTables());
 
         // new sstables from flush can be added during a compaction, but only the compaction can remove them,
@@ -114,7 +115,6 @@ public class CompactionTask extends AbstractCompactionTask
         // all the sstables (that existed when we started)
         logger.info("Compacting {}", toCompact);
 
-        controller.addLastSuccessfulRepair(SystemKeyspace.getLastSuccessfulRepair(cfs.metadata.ksName, cfs.name));
         long start = System.nanoTime();
         long totalkeysWritten = 0;
 
