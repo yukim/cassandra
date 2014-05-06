@@ -778,12 +778,12 @@ public class AntiEntropyService
 
             if (job.completedSynchronization(differencer))
             {
+                // send and wait RepairSuccess for synced keyspace/CF/range
+                job.sendRepairSuccess();
+
                 activeJobs.remove(differencer.cfname);
                 String remaining = activeJobs.size() == 0 ? "" : String.format(" (%d remaining column family to sync for this session)", activeJobs.size());
                 logger.info(String.format("[repair #%s] %s is fully synced%s", getName(), differencer.cfname, remaining));
-
-                // send and wait RepairSuccess for synced keyspace/CF/range
-                job.sendRepairSuccess();
 
                 if (activeJobs.isEmpty())
                     completed.signalAll();
@@ -934,11 +934,14 @@ public class AntiEntropyService
                     // store repair success for coordinator
                     SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
                     for (InetAddress endpoint : endpoints)
-                        MessagingService.instance().sendRR(success, endpoint, callback);
+                    {
+                        Message message = success.getMessage(Gossiper.instance.getVersion(endpoint));
+                        MessagingService.instance().sendRR(message, endpoint, callback, TimeUnit.HOURS.toMillis(1)); // 1 hour timeout
+                    }
                     successResponses.await();
                     successResponses = null;
                 }
-                catch (InterruptedException e)
+                catch (Exception e)
                 {
                     throw new RuntimeException(e);
                 }
@@ -1258,7 +1261,7 @@ public class AntiEntropyService
                 logger.info("Received repair success for {}/{}, {} at {}", new Object[]{success.keyspace, success.columnFamily, success.range, success.succeedAt});
                 SystemTable.updateLastSuccessfulRepair(success.keyspace, success.columnFamily, success.range, success.succeedAt);
 
-                Message response = message.getReply(FBUtilities.getBroadcastAddress(), new byte[0], MessagingService.version_);
+                Message response = message.getInternalReply(new byte[0], MessagingService.version_);
                 MessagingService.instance().sendReply(response, id, message.getFrom());
             }
             catch (IOException e)

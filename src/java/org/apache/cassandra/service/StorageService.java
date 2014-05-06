@@ -147,7 +147,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         put(Verb.TREE_REQUEST, Stage.ANTI_ENTROPY);
         put(Verb.TREE_RESPONSE, Stage.ANTI_ENTROPY);
         // use STREAM_INITIATE to handle repair success
-        put(Verb.STREAM_INITIATE, Stage.ANTI_ENTROPY);
+        put(Verb.STREAM_INITIATE, Stage.MISC);
         put(Verb.STREAMING_REPAIR_REQUEST, Stage.ANTI_ENTROPY);
         put(Verb.STREAMING_REPAIR_RESPONSE, Stage.ANTI_ENTROPY);
         put(Verb.GOSSIP_DIGEST_ACK, Stage.GOSSIP);
