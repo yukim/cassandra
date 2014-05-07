@@ -779,7 +779,12 @@ public class AntiEntropyService
             if (job.completedSynchronization(differencer))
             {
                 // send and wait RepairSuccess for synced keyspace/CF/range
-                job.sendRepairSuccess();
+                if (!job.sendRepairSuccess())
+                {
+                    exception = new IOException("RepairSuccess failed.");
+                    forceShutdown();
+                    return;
+                }
 
                 activeJobs.remove(differencer.cfname);
                 String remaining = activeJobs.size() == 0 ? "" : String.format(" (%d remaining column family to sync for this session)", activeJobs.size());
@@ -916,7 +921,7 @@ public class AntiEntropyService
                 }
             }
 
-            public void sendRepairSuccess()
+            public boolean sendRepairSuccess()
             {
                 try
                 {
@@ -927,6 +932,7 @@ public class AntiEntropyService
 
                         public void response(Message msg)
                         {
+                            logger.info("Response received for RepairSuccess from {}.", msg.getFrom());
                             RepairJob.this.successResponses.countDown();
                         }
                     };
@@ -938,12 +944,18 @@ public class AntiEntropyService
                         Message message = success.getMessage(Gossiper.instance.getVersion(endpoint));
                         MessagingService.instance().sendRR(message, endpoint, callback, TimeUnit.HOURS.toMillis(1)); // 1 hour timeout
                     }
-                    successResponses.await();
+                    if (!successResponses.await(1, TimeUnit.HOURS))
+                    {
+                        logger.error("{} endpoints have not responded to RepairSuccess.", successResponses.getCount());
+                        return false;
+                    }
                     successResponses = null;
+                    return true;
                 }
                 catch (Exception e)
                 {
-                    throw new RuntimeException(e);
+                    logger.error("Error while sending RepairSuccess", e);
+                    return false;
                 }
             }
 
