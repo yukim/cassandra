@@ -25,6 +25,7 @@ import java.nio.channels.ReadableByteChannel;
 
 import com.google.common.base.Throwables;
 
+import org.apache.cassandra.io.sstable.format.RangeAwareSSTableWriter;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 
 import org.slf4j.Logger;
@@ -61,7 +62,7 @@ public class CompressedStreamReader extends StreamReader
      * @throws java.io.IOException if reading the remote sstable fails. Will throw an RTE if local write fails.
      */
     @Override
-    public SSTableWriter read(ReadableByteChannel channel) throws IOException
+    public RangeAwareSSTableWriter read(ReadableByteChannel channel) throws IOException
     {
         logger.debug("reading file from {}, repairedAt = {}", session.peer, repairedAt);
         long totalSize = totalSize();
@@ -74,7 +75,7 @@ public class CompressedStreamReader extends StreamReader
         }
         ColumnFamilyStore cfs = Keyspace.open(kscf.left).getColumnFamilyStore(kscf.right);
 
-        SSTableWriter writer = createWriter(cfs, totalSize, repairedAt, format);
+        RangeAwareSSTableWriter writer = createWriter(cfs, repairedAt, format, totalSize);
 
         CompressedInputStream cis = new CompressedInputStream(Channels.newInputStream(channel), compressionInfo);
         BytesReadTracker in = new BytesReadTracker(new DataInputStream(cis));
@@ -91,7 +92,7 @@ public class CompressedStreamReader extends StreamReader
 
                 while (in.getBytesRead() < sectionLength)
                 {
-                    writeRow(writer, in, cfs);
+                    desc = writeRow(writer, in, cfs);
 
                     // when compressed, report total bytes of compressed chunks read since remoteFile.size is the sum of chunks transferred
                     session.progress(desc, ProgressInfo.Direction.IN, cis.getTotalCompressedBytesRead(), totalSize);

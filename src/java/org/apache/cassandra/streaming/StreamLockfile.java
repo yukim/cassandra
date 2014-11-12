@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.google.common.base.Charsets;
+
+import org.apache.cassandra.io.sstable.format.RangeAwareSSTableWriter;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,11 +69,12 @@ public class StreamLockfile
         this.lockfile = lockfile;
     }
 
-    public void create(Collection<SSTableWriter> sstables)
+    public void create(Collection<RangeAwareSSTableWriter> sstables)
     {
         List<String> sstablePaths = new ArrayList<>(sstables.size());
-        for (SSTableWriter writer : sstables)
+        for (RangeAwareSSTableWriter rangeAwareWriter : sstables)
         {
+            for (SSTableWriter writer : rangeAwareWriter.getWriters())
             /* write out the file names *without* the 'tmp-file' flag in the file name.
                this class will not need to clean up tmp files (on restart), CassandraDaemon does that already,
                just make sure we delete the fully-formed SSTRs. */

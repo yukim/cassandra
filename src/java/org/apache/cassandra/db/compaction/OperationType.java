@@ -32,7 +32,8 @@ public enum OperationType
     TOMBSTONE_COMPACTION("Tombstone Compaction"),
     UNKNOWN("Unknown compaction type"),
     ANTICOMPACTION("Anticompaction after repair"),
-    VERIFY("Verify");
+    VERIFY("Verify"),
+    REBALANCE("Rebalance data over disks");
 
     private final String type;
 

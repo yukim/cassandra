@@ -19,14 +19,22 @@ package org.apache.cassandra.db;
 
 import java.io.File;
 import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
@@ -40,8 +48,8 @@ import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
-import org.apache.cassandra.io.util.DiskAwareRunnable;
 import org.apache.cassandra.service.ActiveRepairService;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.memory.*;
@@ -225,15 +233,40 @@ public class Memtable
         return builder.toString();
     }
 
-    public FlushRunnable flushRunnable()
+    public List<FlushRunnable> flushRunnables()
     {
-        return new FlushRunnable(lastReplayPosition.get());
+        List<Range<Token>> localRanges;
+        if (Schema.instance.getKeyspaceInstance(cfs.keyspace.getName()) != null)
+            localRanges = Range.sort(StorageService.instance.getLocalRanges(cfs.keyspace.getName()));
+        else
+            localRanges = Collections.emptyList();
+
+        if (!cfs.partitioner.supportsSplitting() || localRanges.isEmpty())
+            return Arrays.asList(new FlushRunnable(lastReplayPosition.get()));
+
+        return createFlushRunnables(localRanges);
+    }
+
+    private List<FlushRunnable> createFlushRunnables(List<Range<Token>> localRanges)
+    {
+        assert cfs.partitioner.supportsSplitting();
+        Directories.DataDirectory[] locations = cfs.directories.getWriteableLocations();
+        List<RowPosition> boundaries = StorageService.getDiskBoundaries(localRanges, cfs.partitioner, locations);
+        List<FlushRunnable> runnables = new ArrayList<>(boundaries.size());
+        RowPosition rangeStart = cfs.partitioner.getMinimumToken().minKeyBound();
+        for (int i = 0; i < boundaries.size(); i++)
+        {
+            RowPosition t = boundaries.get(i);
+            runnables.add(new FlushRunnable(lastReplayPosition.get(), rangeStart, t, locations[i]));
+            rangeStart = t;
+        }
+        return runnables;
     }
 
     public String toString()
     {
         return String.format("Memtable-%s@%s(%s serialized bytes, %s ops, %.0f%%/%.0f%% of on/off-heap limit)",
-                             cfs.name, hashCode(), liveDataSize, currentOperations, 100 * allocator.onHeap().ownershipRatio(), 100 * allocator.offHeap().ownershipRatio());
+                cfs.name, hashCode(), liveDataSize, currentOperations, 100 * allocator.onHeap().ownershipRatio(), 100 * allocator.offHeap().ownershipRatio());
     }
 
     /**
@@ -292,17 +325,28 @@ public class Memtable
         return creationTime;
     }
 
-    class FlushRunnable extends DiskAwareRunnable
+    class FlushRunnable implements Callable<SSTableReader>
     {
         private final ReplayPosition context;
         private final long estimatedSize;
+        private final ConcurrentNavigableMap<RowPosition, AtomicBTreeColumns> toFlush;
+        private final Directories.DataDirectory flushLocation;
+
+        FlushRunnable(ReplayPosition context, RowPosition from, RowPosition to, Directories.DataDirectory flushLocation)
+        {
+            this(context, rows.subMap(from, to), flushLocation);
+        }
 
         FlushRunnable(ReplayPosition context)
         {
+            this(context, rows, null);
+        }
+        FlushRunnable(ReplayPosition context, ConcurrentNavigableMap<RowPosition, AtomicBTreeColumns> toFlush, Directories.DataDirectory flushLocation)
+        {
             this.context = context;
-
+            this.toFlush = toFlush;
             long keySize = 0;
-            for (RowPosition key : rows.keySet())
+            for (RowPosition key : toFlush.keySet())
             {
                 //  make sure we don't write non-sensical keys
                 assert key instanceof DecoratedKey;
@@ -312,21 +356,12 @@ public class Memtable
                                     + keySize // keys in data file
                                     + liveDataSize.get()) // data
                                     * 1.2); // bloom filter and row index overhead
-        }
 
-        public long getExpectedWriteSize()
-        {
-            return estimatedSize;
-        }
+            if (flushLocation == null)
+                this.flushLocation = cfs.directories.getWriteableLocation(estimatedSize);
+            else
+                this.flushLocation = flushLocation;
 
-        protected void runMayThrow() throws Exception
-        {
-            long writeSize = getExpectedWriteSize();
-            Directories.DataDirectory dataDirectory = getWriteDirectory(writeSize);
-            File sstableDirectory = cfs.directories.getLocationForDisk(dataDirectory);
-            assert sstableDirectory != null : "Flush task is not bound to any disk";
-            SSTableReader sstable = writeSortedContents(context, sstableDirectory);
-            cfs.replaceFlushed(Memtable.this, sstable);
         }
 
         protected Directories getDirectories()
@@ -346,7 +381,7 @@ public class Memtable
                 int heavilyContendedRowCount = 0;
                 // (we can't clear out the map as-we-go to free up memory,
                 //  since the memtable is being used for queries in the "pending flush" category)
-                for (Map.Entry<RowPosition, AtomicBTreeColumns> entry : rows.entrySet())
+                for (Map.Entry<RowPosition, AtomicBTreeColumns> entry : toFlush.entrySet())
                 {
                     AtomicBTreeColumns cf = entry.getValue();
 
@@ -383,7 +418,7 @@ public class Memtable
                 }
 
                 if (heavilyContendedRowCount > 0)
-                    logger.debug(String.format("High update contention in %d/%d partitions of %s ", heavilyContendedRowCount, rows.size(), Memtable.this.toString()));
+                    logger.debug(String.format("High update contention in %d/%d partitions of %s ", heavilyContendedRowCount, toFlush.size(), Memtable.this.toString()));
 
                 return ssTable;
             }
@@ -393,7 +428,13 @@ public class Memtable
         {
             MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator).replayPosition(context);
 
-            return SSTableWriter.create(Descriptor.fromFilename(filename), (long) rows.size(), ActiveRepairService.UNREPAIRED_SSTABLE, cfs.metadata, cfs.partitioner, sstableMetadataCollector);
+            return SSTableWriter.create(Descriptor.fromFilename(filename), (long) toFlush.size(), ActiveRepairService.UNREPAIRED_SSTABLE, cfs.metadata, cfs.partitioner, sstableMetadataCollector);
+        }
+
+        @Override
+        public SSTableReader call() throws Exception
+        {
+            return writeSortedContents(context, cfs.directories.getLocationForDisk(flushLocation));
         }
     }
 

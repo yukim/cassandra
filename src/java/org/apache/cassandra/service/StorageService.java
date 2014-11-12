@@ -68,21 +68,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.BatchlogManager;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.CounterMutationVerbHandler;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.DefinitionsUpdateVerbHandler;
-import org.apache.cassandra.db.HintedHandOffManager;
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.MigrationRequestVerbHandler;
-import org.apache.cassandra.db.MutationVerbHandler;
-import org.apache.cassandra.db.ReadRepairVerbHandler;
-import org.apache.cassandra.db.ReadVerbHandler;
-import org.apache.cassandra.db.SchemaCheckVerbHandler;
-import org.apache.cassandra.db.SnapshotDetailsTabularData;
-import org.apache.cassandra.db.SystemKeyspace;
-import org.apache.cassandra.db.TruncateVerbHandler;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.dht.BootStrapper;
@@ -2516,6 +2502,31 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
+    public int rebalanceDisks(String keyspaceName, String ... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    {
+        CompactionManager.AllSSTableOpStatus status = CompactionManager.AllSSTableOpStatus.SUCCESSFUL;
+        for (ColumnFamilyStore cfs : getValidColumnFamilies(false, false, keyspaceName, columnFamilies))
+        {
+            CompactionManager.AllSSTableOpStatus oneStatus = cfs.rebalanceDisks();
+            if (oneStatus != CompactionManager.AllSSTableOpStatus.SUCCESSFUL)
+                status = oneStatus;
+        }
+        return status.statusCode;
+    }
+
+    public boolean validateCompactionStrategy(String keyspaceName, String ... columnFamilies) throws IOException
+    {
+        CompactionManager.AllSSTableOpStatus status = CompactionManager.AllSSTableOpStatus.SUCCESSFUL;
+        boolean success = true;
+        for (ColumnFamilyStore cfs : getValidColumnFamilies(false, false, keyspaceName, columnFamilies))
+        {
+            if (!cfs.getCompactionStrategyManager().validateStrategies())
+                success = false;
+        }
+        return success;
+
+    }
+
     /**
      * Takes the snapshot for the given keyspaces. A snapshot name must be specified.
      *
@@ -2855,8 +2866,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                      String... columnFamilies)
     {
         return forceRepairRangeAsync(beginToken, endToken, keyspaceName,
-                                     isSequential ? RepairParallelism.SEQUENTIAL.ordinal() : RepairParallelism.PARALLEL.ordinal(),
-                                     dataCenters, hosts, fullRepair, columnFamilies);
+                isSequential ? RepairParallelism.SEQUENTIAL.ordinal() : RepairParallelism.PARALLEL.ordinal(),
+                dataCenters, hosts, fullRepair, columnFamilies);
     }
 
     public int forceRepairRangeAsync(String beginToken,
@@ -4285,4 +4296,75 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         logger.info(String.format("Updated hinted_handoff_throttle_in_kb to %d", throttleInKB));
     }
 
+    public static List<RowPosition> getDiskBoundaries(ColumnFamilyStore cfs)
+    {
+        if (!cfs.partitioner.supportsSplitting())
+            return null;
+
+        Collection<Range<Token>> lr = StorageService.instance.getLocalRanges(cfs.keyspace.getName());
+        if (lr == null || lr.isEmpty())
+            return null;
+        List<Range<Token>> localRanges = Range.sort(lr);
+
+        return getDiskBoundaries(localRanges, cfs.partitioner, cfs.directories.getWriteableLocations());
+    }
+
+    /**
+     * Returns a list of disk boundaries, the result will differ depending on whether vnodes are enabled or not.
+     *
+     * What is returned are upper bounds for the disks, meaning everything from partitioner.minToken up to
+     * getDiskBoundaries(..).get(0) should be on the first disk, everything between 0 to 1 should be on the second disk
+     * etc.
+     *
+     * The final entry in the returned list will always be the partitioner maximum tokens upper key bound
+     *
+     * @param localRanges
+     * @param partitioner
+     * @param dataDirectories
+     * @return
+     */
+    public static List<RowPosition> getDiskBoundaries(List<Range<Token>> localRanges, IPartitioner partitioner, Directories.DataDirectory[] dataDirectories)
+    {
+        if (!partitioner.supportsSplitting())
+            return null;
+
+        RowPosition max = partitioner.getMaximumToken().maxKeyBound();
+
+        List<Token> boundaries;
+
+        if (DatabaseDescriptor.getNumTokens() > 1)
+        {
+            boundaries = partitioner.splitFullRange(dataDirectories.length);
+            return getDiskBoundariesForVNodes(localRanges, boundaries, max);
+        }
+        else
+        {
+            Token first = localRanges.get(0).left;
+            Token last = localRanges.get(localRanges.size() - 1).right;
+            boundaries = partitioner.splitRange(first, last, dataDirectories.length);
+            List<RowPosition> diskBoundaries = new ArrayList<>();
+
+            for (int i = 0; i < boundaries.size() - 1; i++)
+                diskBoundaries.add(boundaries.get(i).minKeyBound());
+
+            diskBoundaries.add(max);
+            return diskBoundaries;
+        }
+    }
+
+    public static List<RowPosition> getDiskBoundariesForVNodes(List<Range<Token>> localRanges, List<Token> boundaries, RowPosition end)
+    {
+        int boundaryIndex = 0;
+        List<RowPosition> diskBoundaries = new ArrayList<>();
+        for (Range<Token> localRange : localRanges)
+        {
+            while (localRange.left.minKeyBound().compareTo(boundaries.get(boundaryIndex).maxKeyBound()) > 0)
+            {
+                diskBoundaries.add(localRange.left.minKeyBound());
+                boundaryIndex++;
+            }
+        }
+        diskBoundaries.add(end);
+        return diskBoundaries;
+    }
 }

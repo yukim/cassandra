@@ -286,4 +286,39 @@ public class ByteOrderedPartitioner implements IPartitioner
     {
         return BytesType.instance;
     }
+
+    @Override
+    public List<Token> splitFullRange(int parts)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public List<Token> splitRange(Token start, Token end, int parts)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean supportsSplitting()
+    {
+        return false;
+    }
+
+    @Override
+    public Token tokenForValue(BigInteger value)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public BigInteger valueForToken(Token token)
+    {
+        throw new UnsupportedOperationException();
+    }
+    @Override
+    public Token getMaximumToken()
+    {
+        throw new UnsupportedOperationException();
+    }
 }

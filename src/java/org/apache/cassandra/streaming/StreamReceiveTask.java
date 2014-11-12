@@ -31,6 +31,7 @@ import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.io.sstable.format.RangeAwareSSTableWriter;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.utils.Pair;
@@ -53,7 +54,7 @@ public class StreamReceiveTask extends StreamTask
     private boolean done = false;
 
     //  holds references to SSTables received
-    protected Collection<SSTableWriter> sstables;
+    protected Collection<RangeAwareSSTableWriter> sstables;
 
     public StreamReceiveTask(StreamSession session, UUID cfId, int totalFiles, long totalSize)
     {
@@ -68,12 +69,12 @@ public class StreamReceiveTask extends StreamTask
      *
      * @param sstable SSTable file received.
      */
-    public synchronized void received(SSTableWriter sstable)
+    public synchronized void received(RangeAwareSSTableWriter sstable)
     {
         if (done)
             return;
 
-        assert cfId.equals(sstable.metadata.cfId);
+        assert cfId.equals(sstable.cfs.metadata.cfId);
 
         sstables.add(sstable);
         if (sstables.size() == totalFiles)
@@ -108,7 +109,7 @@ public class StreamReceiveTask extends StreamTask
             if (kscf == null)
             {
                 // schema was dropped during streaming
-                for (SSTableWriter writer : task.sstables)
+                for (RangeAwareSSTableWriter writer : task.sstables)
                     writer.abort();
                 task.sstables.clear();
                 return;
@@ -121,8 +122,8 @@ public class StreamReceiveTask extends StreamTask
             StreamLockfile lockfile = new StreamLockfile(lockfiledir, UUID.randomUUID());
             lockfile.create(task.sstables);
             List<SSTableReader> readers = new ArrayList<>();
-            for (SSTableWriter writer : task.sstables)
-                readers.add(writer.finish(true));
+            for (RangeAwareSSTableWriter writer : task.sstables)
+                readers.addAll(writer.close());
             lockfile.delete();
             task.sstables.clear();
 
@@ -149,7 +150,7 @@ public class StreamReceiveTask extends StreamTask
             return;
 
         done = true;
-        for (SSTableWriter writer : sstables)
+        for (RangeAwareSSTableWriter writer : sstables)
             writer.abort();
         sstables.clear();
     }

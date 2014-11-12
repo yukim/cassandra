@@ -54,25 +54,29 @@ import org.apache.cassandra.service.StorageService;
 /**
  * Manages the compaction strategies.
  *
- * Currently has two instances of actual compaction strategies - one for repaired data and one for
+ * Currently has two instances of actual compaction strategies per data directory - one for repaired data and one for
  * unrepaired data. This is done to be able to totally separate the different sets of sstables.
  */
+
 public class CompactionStrategyManager implements INotificationConsumer
 {
     protected static final String COMPACTION_ENABLED = "enabled";
     private static final Logger logger = LoggerFactory.getLogger(CompactionStrategyManager.class);
     private final ColumnFamilyStore cfs;
-    private volatile AbstractCompactionStrategy repaired;
-    private volatile AbstractCompactionStrategy unrepaired;
+    private volatile List<AbstractCompactionStrategy> repaired = new ArrayList<>();
+    private volatile List<AbstractCompactionStrategy> unrepaired = new ArrayList<>();
     private volatile boolean enabled = true;
     public boolean isActive = true;
+    private Directories.DataDirectory[] locations;
+
 
     public CompactionStrategyManager(ColumnFamilyStore cfs)
     {
-        cfs.getDataTracker().subscribe(this);
-        logger.debug("{} subscribed to the data tracker.", this);
         this.cfs = cfs;
         reload(cfs.metadata);
+        cfs.getDataTracker().subscribe(this);
+        locations = cfs.directories.getWriteableLocations();
+        logger.debug("{} subscribed to the data tracker.", this);
         String optionValue = cfs.metadata.compactionStrategyOptions.get(COMPACTION_ENABLED);
         enabled = optionValue == null || Boolean.parseBoolean(optionValue);
     }
@@ -90,20 +94,24 @@ public class CompactionStrategyManager implements INotificationConsumer
 
         maybeReload(cfs.metadata);
 
-        if (repaired.getEstimatedRemainingTasks() > unrepaired.getEstimatedRemainingTasks())
+        List<AbstractCompactionStrategy> strategies = new ArrayList<>(repaired.size() + unrepaired.size());
+        strategies.addAll(repaired);
+        strategies.addAll(unrepaired);
+        Collections.sort(strategies, new Comparator<AbstractCompactionStrategy>()
         {
-            AbstractCompactionTask repairedTask = repaired.getNextBackgroundTask(gcBefore);
-            if (repairedTask != null)
-                return repairedTask;
-            return unrepaired.getNextBackgroundTask(gcBefore);
-        }
-        else
+            @Override
+            public int compare(AbstractCompactionStrategy o1, AbstractCompactionStrategy o2)
+            {
+                return Ints.compare(o2.getEstimatedRemainingTasks(), o1.getEstimatedRemainingTasks());
+            }
+        });
+        for (AbstractCompactionStrategy strategy : strategies)
         {
-            AbstractCompactionTask unrepairedTask = unrepaired.getNextBackgroundTask(gcBefore);
-            if (unrepairedTask != null)
-                return unrepairedTask;
-            return repaired.getNextBackgroundTask(gcBefore);
+            AbstractCompactionTask task = strategy.getNextBackgroundTask(gcBefore);
+            if (task != null)
+                return task;
         }
+        return null;
     }
 
     /**
@@ -150,39 +158,62 @@ public class CompactionStrategyManager implements INotificationConsumer
             if (sstable.openReason != SSTableReader.OpenReason.EARLY)
                 getCompactionStrategyFor(sstable).addSSTable(sstable);
         }
-        repaired.startup();
-        unrepaired.startup();
+        for (AbstractCompactionStrategy strategy : repaired)
+            strategy.startup();
+        for (AbstractCompactionStrategy strategy : unrepaired)
+            strategy.startup();
     }
 
     /**
      * return the compaction strategy for the given sstable
      *
-     * returns differently based on the repaired status
+     * returns differently based on the repaired status and which vnode the compaction strategy belongs to
      * @param sstable
      * @return
      */
     private AbstractCompactionStrategy getCompactionStrategyFor(SSTableReader sstable)
     {
+        int index = getCompactionStrategyIndex(cfs, sstable.descriptor);
         if (sstable.isRepaired())
-            return repaired;
+            return repaired.get(index);
         else
-            return unrepaired;
+            return unrepaired.get(index);
+    }
+
+    public static int getCompactionStrategyIndex(ColumnFamilyStore cfs, Descriptor descriptor)
+    {
+        if (!cfs.partitioner.supportsSplitting())
+            return 0;
+
+        Directories.DataDirectory[] directories = cfs.directories.getWriteableLocations();
+        for (int i = 0; i < directories.length; i++)
+        {
+            Directories.DataDirectory directory = directories[i];
+            if (descriptor.directory.getPath().startsWith(directory.location.getPath()))
+                return i;
+        }
+        logger.debug("Could not find directory for {} - putting it in {} instead", descriptor, directories[0].location);
+        return 0;
     }
 
     public void shutdown()
     {
         isActive = false;
-        repaired.shutdown();
-        unrepaired.shutdown();
+        for (AbstractCompactionStrategy strategy : repaired)
+            strategy.shutdown();
+        for (AbstractCompactionStrategy strategy : unrepaired)
+            strategy.shutdown();
+
     }
 
 
     public synchronized void maybeReload(CFMetaData metadata)
     {
-        if (repaired != null && repaired.getClass().equals(metadata.compactionStrategyClass)
-                && unrepaired != null && unrepaired.getClass().equals(metadata.compactionStrategyClass)
-                && repaired.options.equals(metadata.compactionStrategyOptions) // todo: assumes all have the same options
-                && unrepaired.options.equals(metadata.compactionStrategyOptions))
+        if (repaired != null && repaired.get(0).getClass().equals(metadata.compactionStrategyClass)
+                && unrepaired != null && unrepaired.get(0).getClass().equals(metadata.compactionStrategyClass)
+                && repaired.get(0).options.equals(metadata.compactionStrategyOptions) // todo: assumes all have the same options
+                && unrepaired.get(0).options.equals(metadata.compactionStrategyOptions)
+                && Arrays.equals(locations, cfs.directories.getWriteableLocations())) // any drives broken?
             return;
 
         reload(metadata);
@@ -196,38 +227,51 @@ public class CompactionStrategyManager implements INotificationConsumer
      */
     public synchronized void reload(CFMetaData metadata)
     {
-        if (repaired != null)
-            repaired.shutdown();
-        if (unrepaired != null)
-            unrepaired.shutdown();
-        repaired = metadata.createCompactionStrategyInstance(cfs);
-        unrepaired = metadata.createCompactionStrategyInstance(cfs);
+        for (AbstractCompactionStrategy strategy : repaired)
+            strategy.shutdown();
+        for (AbstractCompactionStrategy strategy : unrepaired)
+            strategy.shutdown();
+        repaired.clear();
+        unrepaired.clear();
+        if (cfs.partitioner.supportsSplitting())
+        {
+            locations = cfs.directories.getWriteableLocations();
+            for (int i = 0; i < locations.length; i++)
+            {
+                repaired.add(metadata.createCompactionStrategyInstance(cfs));
+                unrepaired.add(metadata.createCompactionStrategyInstance(cfs));
+            }
+        }
+        else
+        {
+            repaired.add(metadata.createCompactionStrategyInstance(cfs));
+            unrepaired.add(metadata.createCompactionStrategyInstance(cfs));
+        }
         startup();
     }
 
-    public void replaceFlushed(Memtable memtable, SSTableReader sstable)
+    public void replaceFlushed(Memtable memtable, List<SSTableReader> sstables)
     {
-        cfs.getDataTracker().replaceFlushed(memtable, sstable);
-        if (sstable != null)
+        cfs.getDataTracker().replaceFlushed(memtable, sstables);
+        if (sstables != null)
             CompactionManager.instance.submitBackground(cfs);
     }
 
-    /**
-     * TODO: remove, unused
-     */
     public List<SSTableReader> filterSSTablesForReads(List<SSTableReader> sstables)
     {
         // todo: union of filtered sstables or intersection?
-        return unrepaired.filterSSTablesForReads(repaired.filterSSTablesForReads(sstables));
+        return unrepaired.get(0).filterSSTablesForReads(repaired.get(0).filterSSTablesForReads(sstables));
     }
 
     public int getUnleveledSSTables()
     {
-        if (repaired instanceof LeveledCompactionStrategy && unrepaired instanceof LeveledCompactionStrategy)
+        if (repaired.get(0) instanceof LeveledCompactionStrategy && unrepaired.get(0) instanceof LeveledCompactionStrategy)
         {
             int count = 0;
-            count += ((LeveledCompactionStrategy)repaired).getLevelSize(0);
-            count += ((LeveledCompactionStrategy)unrepaired).getLevelSize(0);
+            for (AbstractCompactionStrategy strategy : repaired)
+                count += ((LeveledCompactionStrategy)strategy).getLevelSize(0);
+            for (AbstractCompactionStrategy strategy : unrepaired)
+                count += ((LeveledCompactionStrategy)strategy).getLevelSize(0);
             return count;
         }
         return 0;
@@ -235,19 +279,26 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public synchronized int[] getSSTableCountPerLevel()
     {
-        if (repaired instanceof LeveledCompactionStrategy && unrepaired instanceof LeveledCompactionStrategy)
+        if (repaired.get(0) instanceof LeveledCompactionStrategy && unrepaired.get(0) instanceof LeveledCompactionStrategy)
         {
             int [] res = new int[15];
-            int[] repairedCountPerLevel = ((LeveledCompactionStrategy) repaired).getAllLevelSize();
-            res = sumArrays(res, repairedCountPerLevel);
-            int[] unrepairedCountPerLevel = ((LeveledCompactionStrategy) unrepaired).getAllLevelSize();
-            res = sumArrays(res, unrepairedCountPerLevel);
+            for (AbstractCompactionStrategy strategy : repaired)
+            {
+                int[] repairedCountPerLevel = ((LeveledCompactionStrategy) strategy).getAllLevelSize();
+                res = sumArrays(res, repairedCountPerLevel);
+            }
+            for (AbstractCompactionStrategy strategy : unrepaired)
+            {
+                int[] unrepairedCountPerLevel = ((LeveledCompactionStrategy) strategy).getAllLevelSize();
+                res = sumArrays(res, unrepairedCountPerLevel);
+            }
+
             return res;
         }
         return null;
     }
 
-    private static int[] sumArrays(int[] a, int[] b)
+    public static int[] sumArrays(int[] a, int[] b)
     {
         int[] res = new int[Math.max(a.length, b.length)];
         for (int i = 0; i < res.length; i++)
@@ -264,8 +315,8 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public boolean shouldDefragment()
     {
-        assert repaired.getClass().equals(unrepaired.getClass());
-        return repaired.shouldDefragment();
+        assert repaired.get(0).getClass().equals(unrepaired.get(0).getClass());
+        return repaired.get(0).shouldDefragment();
     }
 
 
@@ -274,81 +325,91 @@ public class CompactionStrategyManager implements INotificationConsumer
         if (notification instanceof SSTableAddedNotification)
         {
             SSTableAddedNotification flushedNotification = (SSTableAddedNotification) notification;
-            if (flushedNotification.added.isRepaired())
-                repaired.addSSTable(flushedNotification.added);
-            else
-                unrepaired.addSSTable(flushedNotification.added);
+            getCompactionStrategyFor(flushedNotification.added).addSSTable(flushedNotification.added);
         }
         else if (notification instanceof SSTableListChangedNotification)
         {
+            // a bit of gymnastics to be able to replace sstables in compaction strategies
+            // we use this to know that a compaction finished and where to start the next compaction in LCS
             SSTableListChangedNotification listChangedNotification = (SSTableListChangedNotification) notification;
-            Set<SSTableReader> repairedRemoved = new HashSet<>();
-            Set<SSTableReader> repairedAdded = new HashSet<>();
-            Set<SSTableReader> unrepairedRemoved = new HashSet<>();
-            Set<SSTableReader> unrepairedAdded = new HashSet<>();
+
+            Directories.DataDirectory [] locations = cfs.directories.getWriteableLocations();
+            int locationSize = cfs.partitioner.supportsSplitting() ? locations.length : 1;
+
+            List<Set<SSTableReader>> repairedRemoved = new ArrayList<>(locationSize);
+            List<Set<SSTableReader>> repairedAdded = new ArrayList<>(locationSize);
+            List<Set<SSTableReader>> unrepairedRemoved = new ArrayList<>(locationSize);
+            List<Set<SSTableReader>> unrepairedAdded = new ArrayList<>(locationSize);
+
+            for (int i = 0; i < locationSize; i++)
+            {
+                repairedRemoved.add(new HashSet<>());
+                repairedAdded.add(new HashSet<>());
+                unrepairedRemoved.add(new HashSet<>());
+                unrepairedAdded.add(new HashSet<>());
+            }
 
             for (SSTableReader sstable : listChangedNotification.removed)
             {
+                int i = getCompactionStrategyIndex(cfs, sstable.descriptor);
                 if (sstable.isRepaired())
-                    repairedRemoved.add(sstable);
+                    repairedRemoved.get(i).add(sstable);
                 else
-                    unrepairedRemoved.add(sstable);
+                    unrepairedRemoved.get(i).add(sstable);
             }
             for (SSTableReader sstable : listChangedNotification.added)
             {
+                int i = getCompactionStrategyIndex(cfs, sstable.descriptor);
                 if (sstable.isRepaired())
-                    repairedAdded.add(sstable);
+                    repairedAdded.get(i).add(sstable);
                 else
-                    unrepairedAdded.add(sstable);
-            }
-            if (!repairedRemoved.isEmpty())
-            {
-                repaired.replaceSSTables(repairedRemoved, repairedAdded);
-            }
-            else
-            {
-                for (SSTableReader sstable : repairedAdded)
-                    repaired.addSSTable(sstable);
+                    unrepairedAdded.get(i).add(sstable);
             }
 
-            if (!unrepairedRemoved.isEmpty())
+            for (int i = 0; i < locationSize; i++)
             {
-                unrepaired.replaceSSTables(unrepairedRemoved, unrepairedAdded);
-            }
-            else
-            {
-                for (SSTableReader sstable : unrepairedAdded)
-                    unrepaired.addSSTable(sstable);
+                if (!repairedRemoved.get(i).isEmpty())
+                    repaired.get(i).replaceSSTables(repairedRemoved.get(i), repairedAdded.get(i));
+                else
+                {
+                    for (SSTableReader sstable : repairedAdded.get(i))
+                        repaired.get(i).addSSTable(sstable);
+                }
+                if (!unrepairedRemoved.get(i).isEmpty())
+                    unrepaired.get(i).replaceSSTables(unrepairedRemoved.get(i), unrepairedAdded.get(i));
+                else
+                {
+                    for (SSTableReader sstable : unrepairedAdded.get(i))
+                        unrepaired.get(i).addSSTable(sstable);
+                }
             }
         }
         else if (notification instanceof SSTableRepairStatusChanged)
         {
             for (SSTableReader sstable : ((SSTableRepairStatusChanged) notification).sstable)
             {
+                int index = getCompactionStrategyIndex(cfs, sstable.descriptor);
                 if (sstable.isRepaired())
                 {
-                    unrepaired.removeSSTable(sstable);
-                    repaired.addSSTable(sstable);
+                    unrepaired.get(index).removeSSTable(sstable);
+                    repaired.get(index).addSSTable(sstable);
                 }
                 else
                 {
-                    repaired.removeSSTable(sstable);
-                    unrepaired.addSSTable(sstable);
+                    repaired.get(index).removeSSTable(sstable);
+                    unrepaired.get(index).addSSTable(sstable);
                 }
             }
         }
         else if (notification instanceof SSTableDeletingNotification)
         {
-            SSTableReader sstable = ((SSTableDeletingNotification)notification).deleting;
-            if (sstable.isRepaired())
-                repaired.removeSSTable(sstable);
-            else
-                unrepaired.removeSSTable(sstable);
+            SSTableReader sstable = ((SSTableDeletingNotification) notification).deleting;
+            getCompactionStrategyFor(sstable).removeSSTable(sstable);
         }
     }
 
     /**
-     * Create ISSTableScanner from the given sstables
+     * Create ISSTableScanners from the given sstables
      *
      * Delegates the call to the compaction strategies to allow LCS to create a scanner
      * @param sstables
@@ -357,30 +418,40 @@ public class CompactionStrategyManager implements INotificationConsumer
      */
     public synchronized AbstractCompactionStrategy.ScannerList getScanners(Collection<SSTableReader> sstables, Range<Token> range)
     {
-        List<SSTableReader> repairedSSTables = new ArrayList<>();
-        List<SSTableReader> unrepairedSSTables = new ArrayList<>();
+        assert repaired.size() == unrepaired.size();
+        List<Set<SSTableReader>> repairedSSTables = new ArrayList<>();
+        List<Set<SSTableReader>> unrepairedSSTables = new ArrayList<>();
+
+        for (int i = 0; i < repaired.size(); i++)
+        {
+            repairedSSTables.add(new HashSet<>());
+            unrepairedSSTables.add(new HashSet<>());
+        }
 
         for (SSTableReader sstable : sstables)
         {
             if (sstable.isRepaired())
-                repairedSSTables.add(sstable);
+                repairedSSTables.get(getCompactionStrategyIndex(cfs, sstable.descriptor)).add(sstable);
             else
-                unrepairedSSTables.add(sstable);
+                unrepairedSSTables.get(getCompactionStrategyIndex(cfs, sstable.descriptor)).add(sstable);
         }
 
         List<ISSTableScanner> scanners = new ArrayList<>();
 
-        if (!repairedSSTables.isEmpty())
-            scanners.addAll(repaired.getScanners(repairedSSTables, range).scanners);
-        if (!unrepairedSSTables.isEmpty())
-            scanners.addAll(unrepaired.getScanners(unrepairedSSTables, range).scanners);
+        for (int i = 0; i < repaired.size(); i++)
+        {
+            if (!repairedSSTables.get(i).isEmpty())
+                scanners.addAll(repaired.get(i).getScanners(repairedSSTables.get(i), range).scanners);
+            if (!unrepairedSSTables.isEmpty())
+                scanners.addAll(unrepaired.get(i).getScanners(unrepairedSSTables.get(i), range).scanners);
+        }
 
         return new AbstractCompactionStrategy.ScannerList(scanners);
     }
 
     public Collection<Collection<SSTableReader>> groupSSTablesForAntiCompaction(Collection<SSTableReader> sstablesToGroup)
     {
-        return unrepaired.groupSSTablesForAntiCompaction(sstablesToGroup);
+        return unrepaired.get(0).groupSSTablesForAntiCompaction(sstablesToGroup);
     }
 
     public synchronized AbstractCompactionStrategy.ScannerList getScanners(Collection<SSTableReader> sstables)
@@ -390,12 +461,28 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public long getMaxSSTableBytes()
     {
-        return unrepaired.getMaxSSTableBytes();
+        return unrepaired.get(0).getMaxSSTableBytes();
     }
 
     public AbstractCompactionTask getCompactionTask(Set<SSTableReader> input, int gcBefore, long maxSSTableBytes)
     {
+        validateForCompaction(input);
         return getCompactionStrategyFor(input.iterator().next()).getCompactionTask(input, gcBefore, maxSSTableBytes);
+    }
+
+    private void validateForCompaction(Iterable<SSTableReader> input)
+    {
+        SSTableReader firstSSTable = Iterables.getFirst(input, null);
+        assert firstSSTable != null;
+        boolean repaired = firstSSTable.isRepaired();
+        int firstIndex = getCompactionStrategyIndex(cfs, firstSSTable.descriptor);
+        for (SSTableReader sstable : input)
+        {
+            if (sstable.isRepaired() != repaired)
+                throw new UnsupportedOperationException("You can't mix repaired and unrepaired data in a compaction");
+            if (firstIndex != getCompactionStrategyIndex(cfs, sstable.descriptor))
+                throw new UnsupportedOperationException("You can't mix sstables from different directories in a compaction");
+        }
     }
 
     public Collection<AbstractCompactionTask> getMaximalTasks(final int gcBefore, final boolean splitOutput)
@@ -410,20 +497,21 @@ public class CompactionStrategyManager implements INotificationConsumer
             {
                 synchronized (CompactionStrategyManager.this)
                 {
-                    Collection<AbstractCompactionTask> repairedTasks = repaired.getMaximalTask(gcBefore, splitOutput);
-                    Collection<AbstractCompactionTask> unrepairedTasks = unrepaired.getMaximalTask(gcBefore, splitOutput);
-
-                    if (repairedTasks == null && unrepairedTasks == null)
-                        return null;
-
-                    if (repairedTasks == null)
-                        return unrepairedTasks;
-                    if (unrepairedTasks == null)
-                        return repairedTasks;
-
                     List<AbstractCompactionTask> tasks = new ArrayList<>();
-                    tasks.addAll(repairedTasks);
-                    tasks.addAll(unrepairedTasks);
+                    for (AbstractCompactionStrategy strategy : repaired)
+                    {
+                        Collection<AbstractCompactionTask> task = strategy.getMaximalTask(gcBefore, splitOutput);
+                        if (task != null)
+                            tasks.addAll(task);
+                    }
+                    for (AbstractCompactionStrategy strategy : unrepaired)
+                    {
+                        Collection<AbstractCompactionTask> task = strategy.getMaximalTask(gcBefore, splitOutput);
+                        if (task != null)
+                            tasks.addAll(task);
+                    }
+                    if (tasks.isEmpty())
+                        return null;
                     return tasks;
                 }
             }
@@ -432,14 +520,17 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, int gcBefore)
     {
+        validateForCompaction(sstables);
         return getCompactionStrategyFor(sstables.iterator().next()).getUserDefinedTask(sstables, gcBefore);
     }
 
     public int getEstimatedRemainingTasks()
     {
         int tasks = 0;
-        tasks += repaired.getEstimatedRemainingTasks();
-        tasks += unrepaired.getEstimatedRemainingTasks();
+        for (AbstractCompactionStrategy strategy : repaired)
+            tasks += strategy.getEstimatedRemainingTasks();
+        for (AbstractCompactionStrategy strategy : unrepaired)
+            tasks += strategy.getEstimatedRemainingTasks();
 
         return tasks;
     }
@@ -452,11 +543,34 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public String getName()
     {
-        return unrepaired.getName();
+        return unrepaired.get(0).getName();
     }
 
-    public List<AbstractCompactionStrategy> getStrategies()
+    public List<List<AbstractCompactionStrategy>> getStrategies()
     {
         return Arrays.asList(repaired, unrepaired);
+    }
+
+    public boolean validateStrategies()
+    {
+        List<RowPosition> boundaries = StorageService.getDiskBoundaries(cfs);
+        if (boundaries == null)
+            return true;
+        boolean success = true;
+        for (int i = 0; i < cfs.directories.getWriteableLocations().length; i++)
+        {
+            RowPosition first = (i == 0) ? cfs.partitioner.getMinimumToken().minKeyBound() : boundaries.get(i - 1);
+            RowPosition last = boundaries.get(i);
+            Iterable<SSTableReader> sstables = Iterables.concat(repaired.get(i).getSSTables(), unrepaired.get(i).getSSTables());
+            for (SSTableReader sstable : sstables)
+            {
+                if (sstable.first.compareTo(first) < 0 || sstable.last.compareTo(last) > 0)
+                {
+                    success = false;
+                    logger.error("In wrong compaction strategy: {}", sstable);
+                }
+            }
+        }
+        return success;
     }
 }

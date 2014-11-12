@@ -17,11 +17,11 @@
  */
 package org.apache.cassandra.db.compaction.writers;
 
-import java.io.File;
 import java.util.List;
 import java.util.Set;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
 import org.apache.cassandra.db.compaction.CompactionTask;
@@ -35,11 +35,11 @@ import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 public class MaxSSTableSizeWriter extends CompactionAwareWriter
 {
     private final long estimatedTotalKeys;
-    private final long expectedWriteSize;
     private final long maxSSTableSize;
     private final int level;
     private final long estimatedSSTables;
     private final Set<SSTableReader> allSSTables;
+    private Directories.DataDirectory sstableDirectory;
 
     public MaxSSTableSizeWriter(ColumnFamilyStore cfs, Set<SSTableReader> allSSTables, Set<SSTableReader> nonExpiredSSTables, long maxSSTableSize, int level, boolean offline, OperationType compactionType)
     {
@@ -47,37 +47,39 @@ public class MaxSSTableSizeWriter extends CompactionAwareWriter
         this.allSSTables = allSSTables;
         this.level = level;
         this.maxSSTableSize = maxSSTableSize;
-        long totalSize = cfs.getExpectedCompactedFileSize(nonExpiredSSTables, compactionType);
-        expectedWriteSize = Math.min(maxSSTableSize, totalSize);
         estimatedTotalKeys = SSTableReader.getApproximateKeyCount(nonExpiredSSTables);
         estimatedSSTables = Math.max(1, estimatedTotalKeys / maxSSTableSize);
-        File sstableDirectory = cfs.directories.getLocationForDisk(getWriteDirectory(expectedWriteSize));
-        SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(sstableDirectory)),
+    }
+
+    @Override
+    protected boolean realAppend(AbstractCompactedRow row)
+    {
+        RowIndexEntry rie = sstableWriter.append(row);
+        if (sstableWriter.currentWriter().getOnDiskFilePointer() > maxSSTableSize)
+        {
+            switchCompactionLocation(sstableDirectory);
+        }
+        return rie != null;
+    }
+
+    @Override
+    public void switchCompactionLocation(Directories.DataDirectory location)
+    {
+        sstableDirectory = location;
+        SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(cfs.directories.getLocationForDisk(sstableDirectory))),
                                                     estimatedTotalKeys / estimatedSSTables,
                                                     minRepairedAt,
                                                     cfs.metadata,
                                                     cfs.partitioner,
                                                     new MetadataCollector(allSSTables, cfs.metadata.comparator, level));
         sstableWriter.switchWriter(writer);
+
     }
 
     @Override
-    public boolean append(AbstractCompactedRow row)
+    public List<SSTableReader> finish(long repairedAt)
     {
-        RowIndexEntry rie = sstableWriter.append(row);
-        if (sstableWriter.currentWriter().getOnDiskFilePointer() > maxSSTableSize)
-        {
-            File sstableDirectory = cfs.directories.getLocationForDisk(getWriteDirectory(expectedWriteSize));
-            SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(sstableDirectory)),
-                                                                estimatedTotalKeys / estimatedSSTables,
-                                                                minRepairedAt,
-                                                                cfs.metadata,
-                                                                cfs.partitioner,
-                                                                new MetadataCollector(allSSTables, cfs.metadata.comparator, level));
-
-            sstableWriter.switchWriter(writer);
-        }
-        return rie != null;
+        return sstableWriter.setRepairedAt(repairedAt).finish();
     }
 
     @Override

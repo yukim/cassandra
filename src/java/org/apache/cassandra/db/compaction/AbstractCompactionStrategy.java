@@ -58,7 +58,6 @@ public abstract class AbstractCompactionStrategy
     protected static final String TOMBSTONE_COMPACTION_INTERVAL_OPTION = "tombstone_compaction_interval";
     // disable range overlap check when deciding if an SSTable is candidate for tombstone compaction (CASSANDRA-6563)
     protected static final String UNCHECKED_TOMBSTONE_COMPACTION_OPTION = "unchecked_tombstone_compaction";
-    protected static final String COMPACTION_ENABLED = "enabled";
 
     public final Map<String, String> options;
 
@@ -68,19 +67,6 @@ public abstract class AbstractCompactionStrategy
     protected boolean uncheckedTombstoneCompaction;
     protected boolean disableTombstoneCompactions = false;
 
-    /**
-     * pause/resume/getNextBackgroundTask must synchronize.  This guarantees that after pause completes,
-     * no new tasks will be generated; or put another way, pause can't run until in-progress tasks are
-     * done being created.
-     *
-     * This allows runWithCompactionsDisabled to be confident that after pausing, once in-progress
-     * tasks abort, it's safe to proceed with truncate/cleanup/etc.
-     *
-     * See CASSANDRA-3430
-     */
-    protected boolean isActive = false;
-
-    protected volatile boolean enabled = true;
 
     protected AbstractCompactionStrategy(ColumnFamilyStore cfs, Map<String, String> options)
     {
@@ -99,8 +85,6 @@ public abstract class AbstractCompactionStrategy
             tombstoneCompactionInterval = optionValue == null ? DEFAULT_TOMBSTONE_COMPACTION_INTERVAL : Long.parseLong(optionValue);
             optionValue = options.get(UNCHECKED_TOMBSTONE_COMPACTION_OPTION);
             uncheckedTombstoneCompaction = optionValue == null ? DEFAULT_UNCHECKED_TOMBSTONE_COMPACTION_OPTION : Boolean.parseBoolean(optionValue);
-            if (!shouldBeEnabled())
-                this.disable();
         }
         catch (ConfigurationException e)
         {
@@ -112,29 +96,10 @@ public abstract class AbstractCompactionStrategy
     }
 
     /**
-     * For internal, temporary suspension of background compactions so that we can do exceptional
-     * things like truncate or major compaction
-     */
-    public synchronized void pause()
-    {
-        isActive = false;
-    }
-
-    /**
-     * For internal, temporary suspension of background compactions so that we can do exceptional
-     * things like truncate or major compaction
-     */
-    public synchronized void resume()
-    {
-        isActive = true;
-    }
-
-    /**
      * Performs any extra initialization required
      */
     public void startup()
     {
-        isActive = true;
     }
 
     /**
@@ -142,7 +107,6 @@ public abstract class AbstractCompactionStrategy
      */
     public void shutdown()
     {
-        isActive = false;
     }
 
     /**
@@ -190,21 +154,6 @@ public abstract class AbstractCompactionStrategy
      */
     public abstract long getMaxSSTableBytes();
 
-    public boolean isEnabled()
-    {
-        return this.enabled && this.isActive;
-    }
-
-    public void enable()
-    {
-        this.enabled = true;
-    }
-
-    public void disable()
-    {
-        this.enabled = false;
-    }
-
     /**
      * @return whether or not MeteredFlusher should be able to trigger memtable flushes for this CF.
      */
@@ -221,19 +170,6 @@ public abstract class AbstractCompactionStrategy
     public long getMemtableReservedSize()
     {
         return 0;
-    }
-
-    /**
-     * Handle a flushed memtable.
-     *
-     * @param memtable the flushed memtable
-     * @param sstable the written sstable. can be null if the memtable was clean.
-     */
-    public void replaceFlushed(Memtable memtable, SSTableReader sstable)
-    {
-        cfs.getDataTracker().replaceFlushed(memtable, sstable);
-        if (sstable != null)
-            CompactionManager.instance.submitBackground(cfs);
     }
 
     /**
@@ -312,6 +248,8 @@ public abstract class AbstractCompactionStrategy
     public abstract void addSSTable(SSTableReader added);
 
     public abstract void removeSSTable(SSTableReader sstable);
+
+    public abstract Iterable<SSTableReader> getSSTables();
 
     public static class ScannerList implements AutoCloseable
     {
@@ -451,27 +389,12 @@ public abstract class AbstractCompactionStrategy
                 throw new ConfigurationException(String.format("'%s' should be either 'true' or 'false', not '%s'",UNCHECKED_TOMBSTONE_COMPACTION_OPTION, unchecked));
         }
 
-        String compactionEnabled = options.get(COMPACTION_ENABLED);
-        if (compactionEnabled != null)
-        {
-            if (!compactionEnabled.equalsIgnoreCase("true") && !compactionEnabled.equalsIgnoreCase("false"))
-            {
-                throw new ConfigurationException(String.format("enabled should either be 'true' or 'false', not %s", compactionEnabled));
-            }
-        }
         Map<String, String> uncheckedOptions = new HashMap<String, String>(options);
         uncheckedOptions.remove(TOMBSTONE_THRESHOLD_OPTION);
         uncheckedOptions.remove(TOMBSTONE_COMPACTION_INTERVAL_OPTION);
         uncheckedOptions.remove(UNCHECKED_TOMBSTONE_COMPACTION_OPTION);
-        uncheckedOptions.remove(COMPACTION_ENABLED);
+        uncheckedOptions.remove(CompactionStrategyManager.COMPACTION_ENABLED);
         return uncheckedOptions;
-    }
-
-    public boolean shouldBeEnabled()
-    {
-        String optionValue = options.get(COMPACTION_ENABLED);
-
-        return optionValue == null || Boolean.parseBoolean(optionValue);
     }
 
 

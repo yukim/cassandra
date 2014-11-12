@@ -83,7 +83,7 @@ public class CompactionAwareWriterTest
         populate(cfs, rowCount);
         Set<SSTableReader> sstables = new HashSet<>(cfs.getSSTables());
         long beforeSize = sstables.iterator().next().onDiskLength();
-        CompactionAwareWriter writer = new DefaultCompactionWriter(cfs, sstables, sstables, false, OperationType.COMPACTION);
+        CompactionAwareWriter writer = new DefaultCompactionWriter(cfs, sstables, sstables, false, OperationType.COMPACTION, 0);
         int rows = compact(cfs, sstables, writer);
         assertEquals(1, cfs.getSSTables().size());
         assertEquals(rowCount, rows);

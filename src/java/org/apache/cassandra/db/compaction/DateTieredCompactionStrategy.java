@@ -57,9 +57,6 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
     @Override
     public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-        if (!isEnabled())
-            return null;
-
         while (true)
         {
             List<SSTableReader> latestBucket = getNextBackgroundSSTables(gcBefore);
@@ -79,7 +76,7 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
      */
     private List<SSTableReader> getNextBackgroundSSTables(final int gcBefore)
     {
-        if (!isEnabled() || cfs.getSSTables().isEmpty())
+        if (sstables.isEmpty())
             return Collections.emptyList();
 
         Set<SSTableReader> uncompacting = Sets.intersection(sstables, cfs.getUncompactingSSTables());
@@ -199,6 +196,12 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
     public void removeSSTable(SSTableReader sstable)
     {
         sstables.remove(sstable);
+    }
+
+    @Override
+    public Iterable<SSTableReader> getSSTables()
+    {
+        return ImmutableSet.copyOf(sstables);
     }
     /**
      * A target time span used for bucketing SSTables based on timestamps.

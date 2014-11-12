@@ -236,6 +236,8 @@ public interface StorageServiceMBean extends NotificationEmitter
      */
     public void forceKeyspaceCompaction(boolean splitOutput, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
 
+    public int rebalanceDisks(String keyspace, String ... cfnames) throws IOException, ExecutionException, InterruptedException;
+    public boolean validateCompactionStrategy(String keyspace, String[] cfnames) throws IOException;
     /**
      * Trigger a cleanup of keys on a single keyspace
      */

@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
@@ -37,6 +38,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.schema.LegacySchemaTables;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.Range;
@@ -48,6 +50,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.PropertyFileSnitch;
 import org.apache.cassandra.locator.TokenMetadata;
+import org.apache.cassandra.utils.Pair;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -505,5 +508,54 @@ public class StorageServiceServerTest
 
         repairRangeFrom = StorageService.instance.createRepairRangeFrom("2000", "2000");
         assert repairRangeFrom.size() == 0;
+    }
+
+    @Test
+    public void testDiskBoundariesVNodes()
+    {
+        int disks = 5;
+        int numtokens = 768;
+
+        List<Token> boundaries = new ArrayList<>();
+
+        List<Range<Token>> localRanges = getFakeVnodes(numtokens, 200);
+        long cur = (Long)localRanges.get(localRanges.size() - 1).right.getTokenValue();
+        long totalTokens = 0;
+        for (Range<Token> r : localRanges)
+            totalTokens += (Long) r.right.getTokenValue() - (Long) r.left.getTokenValue();
+
+        long diskWidth = cur / disks;
+        for (int i = 0; i < disks; i++)
+            boundaries.add(new Murmur3Partitioner.LongToken(diskWidth + diskWidth * i));
+
+        int rangeIndex = 0;
+        int diskIndex = 0;
+        long[] sumVnodes = new long[disks];
+
+        List<RowPosition> diskBoundaries = StorageService.getDiskBoundariesForVNodes(localRanges, boundaries, new Murmur3Partitioner.LongToken(cur).maxKeyBound());
+        for (RowPosition rp : diskBoundaries)
+        {
+            while (rangeIndex < localRanges.size() && localRanges.get(rangeIndex).left.getToken().minKeyBound().compareTo(rp) < 0)
+            {
+                sumVnodes[diskIndex] += (Long) localRanges.get(rangeIndex).right.getTokenValue() - (Long) localRanges.get(rangeIndex).left.getTokenValue();
+                rangeIndex++;
+            }
+            diskIndex++;
+        }
+        for (long vn : sumVnodes)
+            assertEquals(disks * ((double)vn) / totalTokens, 1.0, 0.05);
+    }
+
+    private List<Range<Token>> getFakeVnodes(int numtokens, long start)
+    {
+        List<Range<Token>> localRanges = new ArrayList<>();
+        long cur = start;
+        for (long i = 0; i < numtokens; i++)
+        {
+            int vnodesize = ThreadLocalRandom.current().nextInt(50000) + ThreadLocalRandom.current().nextInt(50000);
+            localRanges.add(new Range<Token>(new Murmur3Partitioner.LongToken(cur), new Murmur3Partitioner.LongToken(cur + vnodesize)));
+            cur += vnodesize + ThreadLocalRandom.current().nextInt(50000);
+        }
+        return localRanges;
     }
 }

@@ -1529,7 +1529,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
         synchronized (tidy.global)
         {
-            assert !tidy.isReplaced;
+            assert !tidy.isReplaced : this;
         }
         return !tidy.global.isCompacted.getAndSet(true);
     }

@@ -17,8 +17,6 @@
  */
 package org.apache.cassandra.db.compaction.writers;
 
-import java.io.File;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -26,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
 import org.apache.cassandra.db.compaction.CompactionTask;
@@ -41,40 +40,32 @@ public class MajorLeveledCompactionWriter extends CompactionAwareWriter
 {
     private static final Logger logger = LoggerFactory.getLogger(MajorLeveledCompactionWriter.class);
     private final long maxSSTableSize;
-    private final long expectedWriteSize;
     private final Set<SSTableReader> allSSTables;
     private int currentLevel = 1;
     private long averageEstimatedKeysPerSSTable;
     private long partitionsWritten = 0;
     private long totalWrittenInLevel = 0;
     private int sstablesWritten = 0;
+    private final long keysPerSSTable;
     private final boolean skipAncestors;
+    private Directories.DataDirectory sstableDirectory;
 
     public MajorLeveledCompactionWriter(ColumnFamilyStore cfs, Set<SSTableReader> allSSTables, Set<SSTableReader> nonExpiredSSTables, long maxSSTableSize, boolean offline, OperationType compactionType)
     {
         super(cfs, allSSTables, nonExpiredSSTables, offline);
         this.maxSSTableSize = maxSSTableSize;
         this.allSSTables = allSSTables;
-        expectedWriteSize = Math.min(maxSSTableSize, cfs.getExpectedCompactedFileSize(nonExpiredSSTables, compactionType));
         long estimatedSSTables = Math.max(1, SSTableReader.getTotalBytes(nonExpiredSSTables) / maxSSTableSize);
-        long keysPerSSTable = estimatedTotalKeys / estimatedSSTables;
-        File sstableDirectory = cfs.directories.getLocationForDisk(getWriteDirectory(expectedWriteSize));
+        keysPerSSTable = estimatedTotalKeys / estimatedSSTables;
         skipAncestors = estimatedSSTables * allSSTables.size() > 200000; // magic number, avoid storing too much ancestor information since allSSTables are ancestors to *all* resulting sstables
 
         if (skipAncestors)
             logger.warn("Many sstables involved in compaction, skipping storing ancestor information to avoid running out of memory");
 
-        SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(sstableDirectory)),
-                                                    keysPerSSTable,
-                                                    minRepairedAt,
-                                                    cfs.metadata,
-                                                    cfs.partitioner,
-                                                    new MetadataCollector(allSSTables, cfs.metadata.comparator, currentLevel, skipAncestors));
-        sstableWriter.switchWriter(writer);
     }
 
     @Override
-    public boolean append(AbstractCompactedRow row)
+    protected boolean realAppend(AbstractCompactedRow row)
     {
         long posBefore = sstableWriter.currentWriter().getOnDiskFilePointer();
         RowIndexEntry rie = sstableWriter.append(row);
@@ -87,20 +78,31 @@ public class MajorLeveledCompactionWriter extends CompactionAwareWriter
                 totalWrittenInLevel = 0;
                 currentLevel++;
             }
-
-            averageEstimatedKeysPerSSTable = Math.round(((double) averageEstimatedKeysPerSSTable * sstablesWritten + partitionsWritten) / (sstablesWritten + 1));
-            File sstableDirectory = cfs.directories.getLocationForDisk(getWriteDirectory(expectedWriteSize));
-            SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(sstableDirectory)),
-                                                        averageEstimatedKeysPerSSTable,
-                                                        minRepairedAt,
-                                                        cfs.metadata,
-                                                        cfs.partitioner,
-                                                        new MetadataCollector(allSSTables, cfs.metadata.comparator, currentLevel, skipAncestors));
-            sstableWriter.switchWriter(writer);
-            partitionsWritten = 0;
-            sstablesWritten++;
+            switchCompactionLocation(sstableDirectory);
         }
         return rie != null;
 
+    }
+
+    @Override
+    public void switchCompactionLocation(Directories.DataDirectory location)
+    {
+        this.sstableDirectory = location;
+        averageEstimatedKeysPerSSTable = Math.round(((double) averageEstimatedKeysPerSSTable * sstablesWritten + partitionsWritten) / (sstablesWritten + 1));
+        sstableWriter.switchWriter(SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(cfs.directories.getLocationForDisk(sstableDirectory))),
+                keysPerSSTable,
+                minRepairedAt,
+                cfs.metadata,
+                cfs.partitioner,
+                new MetadataCollector(allSSTables, cfs.metadata.comparator, currentLevel, skipAncestors)));
+        partitionsWritten = 0;
+        sstablesWritten = 0;
+
+    }
+
+    @Override
+    public List<SSTableReader> finish(long repairedAt)
+    {
+        return sstableWriter.setRepairedAt(repairedAt).finish();
     }
 }

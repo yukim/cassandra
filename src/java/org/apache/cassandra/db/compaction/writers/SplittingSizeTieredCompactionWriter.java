@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db.compaction.writers;
 
-import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -26,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
 import org.apache.cassandra.db.compaction.CompactionTask;
@@ -52,6 +52,7 @@ public class SplittingSizeTieredCompactionWriter extends CompactionAwareWriter
     private final Set<SSTableReader> allSSTables;
     private long currentBytesToWrite;
     private int currentRatioIndex = 0;
+    private Directories.DataDirectory location;
 
     public SplittingSizeTieredCompactionWriter(ColumnFamilyStore cfs, Set<SSTableReader> allSSTables, Set<SSTableReader> nonExpiredSSTables, OperationType compactionType)
     {
@@ -82,39 +83,41 @@ public class SplittingSizeTieredCompactionWriter extends CompactionAwareWriter
             }
         }
         ratios = Arrays.copyOfRange(potentialRatios, 0, noPointIndex);
-        File sstableDirectory = cfs.directories.getLocationForDisk(getWriteDirectory(Math.round(totalSize * ratios[currentRatioIndex])));
-        long currentPartitionsToWrite = Math.round(estimatedTotalKeys * ratios[currentRatioIndex]);
         currentBytesToWrite = Math.round(totalSize * ratios[currentRatioIndex]);
-        SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(sstableDirectory)),
-                                                                            currentPartitionsToWrite,
-                                                                            minRepairedAt,
-                                                                            cfs.metadata,
-                                                                            cfs.partitioner,
-                                                                            new MetadataCollector(allSSTables, cfs.metadata.comparator, 0));
-
-        sstableWriter.switchWriter(writer);
-        logger.debug("Ratios={}, expectedKeys = {}, totalSize = {}, currentPartitionsToWrite = {}, currentBytesToWrite = {}", ratios, estimatedTotalKeys, totalSize, currentPartitionsToWrite, currentBytesToWrite);
     }
 
     @Override
-    public boolean append(AbstractCompactedRow row)
+    public boolean realAppend(AbstractCompactedRow row)
     {
         RowIndexEntry rie = sstableWriter.append(row);
         if (sstableWriter.currentWriter().getOnDiskFilePointer() > currentBytesToWrite && currentRatioIndex < ratios.length - 1) // if we underestimate how many keys we have, the last sstable might get more than we expect
         {
             currentRatioIndex++;
             currentBytesToWrite = Math.round(totalSize * ratios[currentRatioIndex]);
-            long currentPartitionsToWrite = Math.round(ratios[currentRatioIndex] * estimatedTotalKeys);
-            File sstableDirectory = cfs.directories.getLocationForDisk(getWriteDirectory(Math.round(totalSize * ratios[currentRatioIndex])));
-            SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(sstableDirectory)),
-                                                                                currentPartitionsToWrite,
-                                                                                minRepairedAt,
-                                                                                cfs.metadata,
-                                                                                cfs.partitioner,
-                                                                                new MetadataCollector(allSSTables, cfs.metadata.comparator, 0));
-            sstableWriter.switchWriter(writer);
-            logger.debug("Switching writer, currentPartitionsToWrite = {}", currentPartitionsToWrite);
+
+            switchCompactionLocation(location);
+            logger.debug("Switching writer, currentBytesToWrite = {}", currentBytesToWrite);
         }
         return rie != null;
+    }
+
+    @Override
+    public void switchCompactionLocation(Directories.DataDirectory location)
+    {
+        this.location = location;
+        long currentPartitionsToWrite = Math.round(ratios[currentRatioIndex] * estimatedTotalKeys);
+        SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getTempSSTablePath(cfs.directories.getLocationForDisk(location))),
+                                                                            currentPartitionsToWrite,
+                                                                            minRepairedAt,
+                                                                            cfs.metadata,
+                                                                            cfs.partitioner,
+                                                                            new MetadataCollector(allSSTables, cfs.metadata.comparator, 0));
+        sstableWriter.switchWriter(writer);
+    }
+
+    @Override
+    public List<SSTableReader> finish(long repairedAt)
+    {
+        return sstableWriter.setRepairedAt(repairedAt).finish();
     }
 }

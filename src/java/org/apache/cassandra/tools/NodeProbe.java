@@ -279,6 +279,17 @@ public class NodeProbe implements AutoCloseable
         ssProxy.forceKeyspaceCompaction(splitOutput, keyspaceName, columnFamilies);
     }
 
+    public void rebalanceDisks(String keyspace, String[] cfnames) throws IOException, ExecutionException, InterruptedException
+    {
+        ssProxy.rebalanceDisks(keyspace, cfnames);
+    }
+
+    public void validateCompactionStrategy(String keyspace, String[] cfnames) throws IOException
+    {
+        ssProxy.validateCompactionStrategy(keyspace, cfnames);
+    }
+
+
     public void forceKeyspaceFlush(String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
         ssProxy.forceKeyspaceFlush(keyspaceName, columnFamilies);

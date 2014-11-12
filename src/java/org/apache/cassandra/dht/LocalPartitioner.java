@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.dht;
 
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
@@ -54,6 +55,12 @@ public class LocalPartitioner implements IPartitioner
         return new LocalToken(ByteBufferUtil.EMPTY_BYTE_BUFFER);
     }
 
+    @Override
+    public Token getMaximumToken()
+    {
+        throw new UnsupportedOperationException();
+    }
+
     public LocalToken getToken(ByteBuffer key)
     {
         return new LocalToken(key);
@@ -82,6 +89,36 @@ public class LocalPartitioner implements IPartitioner
     public AbstractType<?> getTokenValidator()
     {
         return comparator;
+    }
+
+    @Override
+    public List<Token> splitFullRange(int parts)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public List<Token> splitRange(Token start, Token end, int parts)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean supportsSplitting()
+    {
+        return false;
+    }
+
+    @Override
+    public Token tokenForValue(BigInteger value)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public BigInteger valueForToken(Token token)
+    {
+        throw new UnsupportedOperationException();
     }
 
     public class LocalToken extends ComparableObjectToken<ByteBuffer>

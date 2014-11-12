@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.dht;
 
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ public interface IPartitioner
      * Not legal to assign to a node or key.  (But legal to use in range scans.)
      */
     public Token getMinimumToken();
+    public Token getMaximumToken();
 
     /**
      * @return a Token that can be used to route a given key
@@ -78,4 +80,15 @@ public interface IPartitioner
     public Map<Token, Float> describeOwnership(List<Token> sortedTokens);
 
     public AbstractType<?> getTokenValidator();
+
+    public List<Token> splitFullRange(int parts);
+
+    public List<Token> splitRange(Token start, Token end, int parts);
+
+    public boolean supportsSplitting();
+
+    public Token tokenForValue(BigInteger value);
+
+    public BigInteger valueForToken(Token token);
+
 }

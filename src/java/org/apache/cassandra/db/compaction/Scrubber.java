@@ -26,6 +26,8 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.compaction.writers.CompactionAwareWriter;
+import org.apache.cassandra.db.compaction.writers.DefaultCompactionWriter;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
@@ -40,7 +42,6 @@ public class Scrubber implements Closeable
 {
     private final ColumnFamilyStore cfs;
     private final SSTableReader sstable;
-    private final File destination;
     private final boolean skipCorrupted;
 
     private final CompactionController controller;
@@ -96,10 +97,6 @@ public class Scrubber implements Closeable
         List<SSTableReader> toScrub = Collections.singletonList(sstable);
 
         // Calculate the expected compacted filesize
-        this.destination = cfs.directories.getWriteableLocationAsFile(cfs.getExpectedCompactedFileSize(toScrub, OperationType.SCRUB));
-        if (destination == null)
-            throw new IOException("disk full");
-
         // If we run scrub offline, we should never purge tombstone, as we cannot know if other sstable have data that the tombstone deletes.
         this.controller = isOffline
                         ? new ScrubController(cfs)
@@ -128,7 +125,7 @@ public class Scrubber implements Closeable
         outputHandler.output(String.format("Scrubbing %s (%s bytes)", sstable, dataFile.length()));
         Set<SSTableReader> oldSSTable = Sets.newHashSet(sstable);
 
-        try (SSTableRewriter writer = new SSTableRewriter(cfs, oldSSTable, sstable.maxDataAge, isOffline);)
+        try (CompactionAwareWriter writer = new DefaultCompactionWriter(cfs, oldSSTable, oldSSTable, isOffline, OperationType.SCRUB, sstable.getSSTableLevel()))
         {
             nextIndexKey = ByteBufferUtil.readWithShortLength(indexFile);
             {
@@ -136,8 +133,6 @@ public class Scrubber implements Closeable
                 long firstRowPositionFromIndex = rowIndexEntrySerializer.deserialize(indexFile, sstable.descriptor.version).position;
                 assert firstRowPositionFromIndex == 0 : firstRowPositionFromIndex;
             }
-
-            writer.switchWriter(CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, sstable.getSSTableMetadata().repairedAt, sstable));
 
             DecoratedKey prevKey = null;
 
@@ -208,7 +203,7 @@ public class Scrubber implements Closeable
                     }
 
                     AbstractCompactedRow compactedRow = new LazilyCompactedRow(controller, Collections.singletonList(atoms));
-                    if (writer.tryAppend(compactedRow) == null)
+                    if (!writer.tryAppend(compactedRow))
                         emptyRows++;
                     else
                         goodRows++;
@@ -238,7 +233,7 @@ public class Scrubber implements Closeable
                             }
 
                             AbstractCompactedRow compactedRow = new LazilyCompactedRow(controller, Collections.singletonList(atoms));
-                            if (writer.tryAppend(compactedRow) == null)
+                            if (!writer.tryAppend(compactedRow))
                                 emptyRows++;
                             else
                                 goodRows++;
@@ -271,6 +266,7 @@ public class Scrubber implements Closeable
             {
                 // out of order rows, but no bad rows found - we can keep our repairedAt time
                 long repairedAt = badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : sstable.getSSTableMetadata().repairedAt;
+                File destination = cfs.directories.getDirectoryForNewSSTables();
                 try (SSTableWriter inOrderWriter = CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, repairedAt, sstable);)
                 {
                     for (Row row : outOfOrderRows)

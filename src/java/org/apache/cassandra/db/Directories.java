@@ -46,6 +46,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -248,6 +249,19 @@ public class Directories
         return null;
     }
 
+    public DataDirectory getDataDirectoryForFile(File directory)
+    {
+        if (directory != null)
+        {
+            for (DataDirectory dataDirectory : dataDirectories)
+            {
+                if (directory.getAbsolutePath().startsWith(dataDirectory.location.getAbsolutePath()))
+                    return dataDirectory;
+            }
+        }
+        return null;
+    }
+
     public Descriptor find(String filename)
     {
         for (File dir : dataPaths)
@@ -362,7 +376,7 @@ public class Directories
         for (DataDirectory dataDir : dataDirectories)
         {
             if (BlacklistedDirectories.isUnwritable(getLocationForDisk(dataDir)))
-                  continue;
+                continue;
             DataDirectoryCandidate candidate = new DataDirectoryCandidate(dataDir);
             // exclude directory if its total writeSize does not fit to data directory
             if (candidate.availableSpace < writeSize)
@@ -370,6 +384,26 @@ public class Directories
             totalAvailable += candidate.availableSpace;
         }
         return totalAvailable > expectedTotalWriteSize;
+    }
+
+    public DataDirectory[] getWriteableLocations()
+    {
+        List<DataDirectory> nonBlacklistedDirs = new ArrayList<>();
+        for (DataDirectory dir : dataDirectories)
+        {
+            if (!BlacklistedDirectories.isUnwritable(dir.location))
+                nonBlacklistedDirs.add(dir);
+        }
+
+        Collections.sort(nonBlacklistedDirs, new Comparator<DataDirectory>()
+        {
+            @Override
+            public int compare(DataDirectory o1, DataDirectory o2)
+            {
+                return o1.location.compareTo(o2.location);
+            }
+        });
+        return nonBlacklistedDirs.toArray(new DataDirectory[nonBlacklistedDirs.size()]);
     }
 
     public static File getSnapshotDirectory(Descriptor desc, String snapshotName)
@@ -428,6 +462,33 @@ public class Directories
         public long getAvailableSpace()
         {
             return location.getUsableSpace();
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            DataDirectory that = (DataDirectory) o;
+
+            if (location != null ? !location.equals(that.location) : that.location != null) return false;
+
+            return true;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return location != null ? location.hashCode() : 0;
+        }
+
+        @Override
+        public String toString()
+        {
+            return "DataDirectory{" +
+                    "location=" + location +
+                    '}';
         }
     }
 

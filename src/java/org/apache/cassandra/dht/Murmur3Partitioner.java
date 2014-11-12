@@ -20,6 +20,7 @@ package org.apache.cassandra.dht;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -270,5 +271,40 @@ public class Murmur3Partitioner implements IPartitioner
     public AbstractType<?> getTokenValidator()
     {
         return LongType.instance;
+    }
+
+    @Override
+    public List<Token> splitFullRange(int parts)
+    {
+        if(parts == 1)
+            return Arrays.asList(getMaximumToken());
+        return RandomPartitioner.splitRange(getMinimumToken(), getMaximumToken(), parts, this);
+    }
+
+    @Override
+    public List<Token> splitRange(Token start, Token end, int parts)
+    {
+        return RandomPartitioner.splitRange(start, end, parts, this);
+    }
+
+    public Token tokenForValue(BigInteger value)
+    {
+        return new LongToken(value.longValue());
+    }
+
+    public Token getMaximumToken()
+    {
+        return new LongToken(Long.MAX_VALUE);
+    }
+
+    public BigInteger valueForToken(Token token)
+    {
+        return BigInteger.valueOf(((LongToken)token).token);
+    }
+
+    @Override
+    public boolean supportsSplitting()
+    {
+        return true;
     }
 }

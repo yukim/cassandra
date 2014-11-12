@@ -268,7 +268,7 @@ public class CQLSSTableWriterTest
             {
                 return Schema.instance.getCFMetaData(keyspace, tableName);
             }
-        }, new OutputHandler.SystemOutput(false, false));
+        }, new OutputHandler.SystemOutput(true, true));
 
         loader.stream().get();
 

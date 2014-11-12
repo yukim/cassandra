@@ -161,6 +161,7 @@ public class SSTableRewriterTest extends SchemaLoader
         assertEquals(1, sstables.size());
         SSTableRewriter.overrideOpenInterval(10000000);
         boolean checked = false;
+
         try (SSTableRewriter writer = new SSTableRewriter(cfs, sstables, 1000, false);
              AbstractCompactionStrategy.ScannerList scanners = cfs.getCompactionStrategyManager().getScanners(sstables);)
         {

@@ -125,10 +125,10 @@ public class LeveledCompactionStrategyTest
         }
 
         waitForLeveling(cfs);
-        CompactionStrategyManager strategy =  cfs.getCompactionStrategyManager();
+        CompactionStrategyManager strategyManager = cfs.getCompactionStrategyManager();
         // Checking we're not completely bad at math
-        assert strategy.getSSTableCountPerLevel()[1] > 0;
-        assert strategy.getSSTableCountPerLevel()[2] > 0;
+        assert strategyManager.getSSTableCountPerLevel()[1] > 0;
+        assert strategyManager.getSSTableCountPerLevel()[2] > 0;
 
         Collection<Collection<SSTableReader>> groupedSSTables = cfs.getCompactionStrategyManager().groupSSTablesForAntiCompaction(cfs.getSSTables());
         for (Collection<SSTableReader> sstableGroup : groupedSSTables)
@@ -176,10 +176,10 @@ public class LeveledCompactionStrategyTest
         }
 
         waitForLeveling(cfs);
-        CompactionStrategyManager strategy =  cfs.getCompactionStrategyManager();
+        CompactionStrategyManager strategyManager = cfs.getCompactionStrategyManager();
         // Checking we're not completely bad at math
-        assertTrue(strategy.getSSTableCountPerLevel()[1] > 0);
-        assertTrue(strategy.getSSTableCountPerLevel()[2] > 0);
+        assertTrue(strategyManager.getSSTableCountPerLevel()[1] > 0);
+        assertTrue(strategyManager.getSSTableCountPerLevel()[2] > 0);
 
         Range<Token> range = new Range<>(Util.token(""), Util.token(""));
         int gcBefore = keyspace.getColumnFamilyStore(CF_STANDARDDLEVELED).gcBefore(System.currentTimeMillis());
@@ -195,7 +195,7 @@ public class LeveledCompactionStrategyTest
      */
     private void waitForLeveling(ColumnFamilyStore cfs) throws InterruptedException
     {
-        CompactionStrategyManager strategy =  cfs.getCompactionStrategyManager();
+        CompactionStrategyManager strategy = cfs.getCompactionStrategyManager();
         // L0 is the lowest priority, so when that's done, we know everything is done
         while (strategy.getSSTableCountPerLevel()[0] > 1)
             Thread.sleep(100);
@@ -223,7 +223,7 @@ public class LeveledCompactionStrategyTest
         }
 
         waitForLeveling(cfs);
-        LeveledCompactionStrategy strategy = (LeveledCompactionStrategy) ( cfs.getCompactionStrategyManager()).getStrategies().get(1);
+        LeveledCompactionStrategy strategy = (LeveledCompactionStrategy) cfs.getCompactionStrategyManager().getStrategies().get(1).get(0);
         assert strategy.getLevelSize(1) > 0;
 
         // get LeveledScanner for level 1 sstables
@@ -262,7 +262,7 @@ public class LeveledCompactionStrategyTest
         }
         waitForLeveling(cfs);
         cfs.forceBlockingFlush();
-        LeveledCompactionStrategy strategy = (LeveledCompactionStrategy) ( cfs.getCompactionStrategyManager()).getStrategies().get(1);
+        LeveledCompactionStrategy strategy = (LeveledCompactionStrategy) cfs.getCompactionStrategyManager().getStrategies().get(1).get(0);
         cfs.disableAutoCompaction();
 
         while(CompactionManager.instance.isCompacting(Arrays.asList(cfs)))
@@ -314,14 +314,14 @@ public class LeveledCompactionStrategyTest
         while(CompactionManager.instance.isCompacting(Arrays.asList(cfs)))
             Thread.sleep(100);
 
-        CompactionStrategyManager strategy =  cfs.getCompactionStrategyManager();
-        List<AbstractCompactionStrategy> strategies = strategy.getStrategies();
-        LeveledCompactionStrategy repaired = (LeveledCompactionStrategy) strategies.get(0);
-        LeveledCompactionStrategy unrepaired = (LeveledCompactionStrategy) strategies.get(1);
+        CompactionStrategyManager manager = cfs.getCompactionStrategyManager();
+        List<List<AbstractCompactionStrategy>> strategies = manager.getStrategies();
+        LeveledCompactionStrategy repaired = (LeveledCompactionStrategy) strategies.get(0).get(0);
+        LeveledCompactionStrategy unrepaired = (LeveledCompactionStrategy) strategies.get(1).get(0);
         assertEquals(0, repaired.manifest.getLevelCount() );
         assertEquals(2, unrepaired.manifest.getLevelCount());
-        assertTrue(strategy.getSSTableCountPerLevel()[1] > 0);
-        assertTrue(strategy.getSSTableCountPerLevel()[2] > 0);
+        assertTrue(manager.getSSTableCountPerLevel()[1] > 0);
+        assertTrue(manager.getSSTableCountPerLevel()[2] > 0);
 
         for (SSTableReader sstable : cfs.getSSTables())
             assertFalse(sstable.isRepaired());
@@ -339,7 +339,7 @@ public class LeveledCompactionStrategyTest
         sstable1.reloadSSTableMetadata();
         assertTrue(sstable1.isRepaired());
 
-        strategy.handleNotification(new SSTableRepairStatusChanged(Arrays.asList(sstable1)), this);
+        manager.handleNotification(new SSTableRepairStatusChanged(Arrays.asList(sstable1)), this);
 
         int repairedSSTableCount = 0;
         for (List<SSTableReader> level : repaired.manifest.generations)
@@ -351,7 +351,7 @@ public class LeveledCompactionStrategyTest
         assertFalse(unrepaired.manifest.generations[2].contains(sstable1));
 
         unrepaired.removeSSTable(sstable2);
-        strategy.handleNotification(new SSTableAddedNotification(sstable2), this);
+        manager.handleNotification(new SSTableAddedNotification(sstable2), this);
         assertTrue(unrepaired.manifest.getLevel(1).contains(sstable2));
         assertFalse(repaired.manifest.getLevel(1).contains(sstable2));
     }

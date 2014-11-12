@@ -89,9 +89,6 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
      */
     public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-        if (!isEnabled())
-            return null;
-
         while (true)
         {
             OperationType op;
@@ -269,6 +266,14 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
     public void addSSTable(SSTableReader added)
     {
         manifest.add(added);
+    }
+
+    public synchronized Iterable<SSTableReader> getSSTables()
+    {
+        Set<SSTableReader> sstables = new HashSet<>();
+        for (int i = 0; i < manifest.getLevelCount(); i++)
+            sstables.addAll(manifest.getLevel(i));
+        return sstables;
     }
 
     @Override
