@@ -135,7 +135,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private InetAddress removingNode;
 
     /* Are we starting this node in bootstrap mode? */
-    private boolean isBootstrapMode;
+    private volatile boolean isBootstrapMode;
 
     /* we bootstrap but do NOT join the ring unless told to do so */
     private boolean isSurveyMode= Boolean.parseBoolean(System.getProperty("cassandra.write_survey", "false"));
@@ -167,11 +167,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private boolean replacing;
 
     private final StreamStateStore streamStateStore = new StreamStateStore();
-
-    public void finishBootstrapping()
-    {
-        isBootstrapMode = false;
-    }
 
     /** This method updates the local token on disk  */
     public void setTokens(Collection<Token> tokens)
@@ -468,7 +463,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         logger.info("Cassandra version: {}", FBUtilities.getReleaseVersionString());
         logger.info("Thrift API version: {}", cassandraConstants.VERSION);
-        logger.info("CQL supported versions: {} (default: {})", StringUtils.join(ClientState.getCQLSupportedVersion(), ","), ClientState.DEFAULT_CQL_VERSION);
+        logger.info("CQL supported versions: {} (default: {})",
+                    StringUtils.join(ClientState.getCQLSupportedVersion(), ","), ClientState.DEFAULT_CQL_VERSION);
 
         initialized = true;
 
@@ -671,13 +667,20 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // We attempted to replace this with a schema-presence check, but you need a meaningful sleep
         // to get schema info from gossip which defeats the purpose.  See CASSANDRA-4427 for the gory details.
         Set<InetAddress> current = new HashSet<>();
-        logger.debug("Bootstrap variables: {} {} {} {}",
-                     DatabaseDescriptor.isAutoBootstrap(),
-                     SystemKeyspace.bootstrapInProgress(),
-                     SystemKeyspace.bootstrapComplete(),
-                     DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()));
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Bootstrap variables: {} {} {} {}",
+                         DatabaseDescriptor.isAutoBootstrap(),
+                         SystemKeyspace.bootstrapInProgress(),
+                         SystemKeyspace.bootstrapComplete(),
+                         DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()));
+        }
         if (DatabaseDescriptor.isAutoBootstrap() && !SystemKeyspace.bootstrapComplete() && DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress()))
+        {
             logger.info("This node will not auto bootstrap because it is configured to be a seed node.");
+        }
+
+        boolean dataAvailable = true; // make this to false when bootstrap streaming failed
         if (shouldBootstrap())
         {
             if (SystemKeyspace.bootstrapInProgress())
@@ -708,18 +711,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             PendingRangeCalculatorService.instance.blockUntilFinished();
             setMode(Mode.JOINING, "calculation complete, ready to bootstrap", true);
 
+            logger.debug("... got ring + schema info");
 
-            if (logger.isDebugEnabled())
-                logger.debug("... got ring + schema info");
-
-            if (Boolean.parseBoolean(System.getProperty("cassandra.consistent.rangemovement", "true")) &&
+            if (useStrictConsistency &&
                     (
                         tokenMetadata.getBootstrapTokens().valueSet().size() > 0 ||
                         tokenMetadata.getLeavingEndpoints().size() > 0 ||
                         tokenMetadata.getMovingEndpoints().size() > 0
                     ))
+            {
                 throw new UnsupportedOperationException("Other bootstrapping/leaving/moving nodes detected, cannot bootstrap while cassandra.consistent.rangemovement is true");
+            }
 
+            // get bootstrap tokens
             if (!replacing)
             {
                 if (tokenMetadata.isMember(FBUtilities.getBroadcastAddress()))
@@ -777,8 +781,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 setMode(Mode.JOINING, "Replacing a node with token(s): " + bootstrapTokens, true);
             }
 
-            bootstrap(bootstrapTokens);
-            assert !isBootstrapMode; // bootstrap will block until finished
+            dataAvailable = bootstrap(bootstrapTokens);
         }
         else
         {
@@ -796,7 +799,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 }
                 else
                 {
-                    bootstrapTokens = new ArrayList<Token>(initialTokens.size());
+                    bootstrapTokens = new ArrayList<>(initialTokens.size());
                     for (String token : initialTokens)
                         bootstrapTokens.add(getPartitioner().getTokenFactory().fromString(token));
                     logger.info("Saved tokens not found. Using configuration value: {}", bootstrapTokens);
@@ -817,16 +820,24 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         if (!isSurveyMode)
         {
-            // start participating in the ring.
-            SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.COMPLETED);
-            setTokens(bootstrapTokens);
-            // remove the existing info about the replaced node.
-            if (!current.isEmpty())
-                for (InetAddress existing : current)
-                    Gossiper.instance.replacedEndpoint(existing);
-            assert tokenMetadata.sortedTokens().size() > 0;
-
-            doAuthSetup();
+            if (dataAvailable)
+            {
+                // start participating in the ring.
+                SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.COMPLETED);
+                setTokens(bootstrapTokens);
+                // remove the existing info about the replaced node.
+                if (!current.isEmpty())
+                {
+                    for (InetAddress existing : current)
+                        Gossiper.instance.replacedEndpoint(existing);
+                }
+                assert tokenMetadata.sortedTokens().size() > 0;
+                doAuthSetup();
+            }
+            else
+            {
+                logger.warn("Some data streaming failed. Use nodetool to check bootstrap state and resume. For more, see `nodetool help bootstrap`. {}", SystemKeyspace.getBootstrapState());
+            }
         }
         else
         {
@@ -1009,7 +1020,16 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             logger.debug(logMsg);
     }
 
-    private void bootstrap(Collection<Token> tokens)
+    /**
+     * Bootstrap node by fetching data from other nodes.
+     * If node is bootstrapping as a new node, then this also announces bootstrapping to the cluster.
+     *
+     * This blocks until streaming is done.
+     *
+     * @param tokens bootstrapping tokens
+     * @return true if bootstrap succeeds.
+     */
+    private boolean bootstrap(final Collection<Token> tokens)
     {
         isBootstrapMode = true;
         SystemKeyspace.updateTokens(tokens); // DON'T use setToken, that makes us part of the ring locally which is incorrect until we are done bootstrapping
@@ -1039,8 +1059,88 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         setMode(Mode.JOINING, "Starting to bootstrap...", true);
-        new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata).bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
-        logger.info("Bootstrap completed! for the tokens {}", tokens);
+        ListenableFuture<StreamState> bootstrapStream = new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata)
+                                                                        .bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
+        Futures.addCallback(bootstrapStream, new FutureCallback<StreamState>()
+        {
+            @Override
+            public void onSuccess(StreamState streamState)
+            {
+                isBootstrapMode = false;
+                logger.info("Bootstrap completed! for the tokens {}", tokens);
+            }
+
+            @Override
+            public void onFailure(Throwable e)
+            {
+                logger.warn("Error during bootstrap: " + e.getCause().getMessage(), e.getCause());
+            }
+        });
+        try
+        {
+            bootstrapStream.get();
+            return true;
+        }
+        catch (Throwable e)
+        {
+            logger.error("Error while waiting on bootstrap to complete. Bootstrap will have to be restarted.", e);
+            return false;
+        }
+    }
+
+    public boolean resumeBootstrap()
+    {
+        if (isBootstrapMode && SystemKeyspace.bootstrapInProgress())
+        {
+            logger.info("Resuming bootstrap...");
+
+            // get bootstrap tokens saved in system keyspace
+            final Collection<Token> tokens = SystemKeyspace.getSavedTokens();
+            // already bootstrapped ranges are filtered during bootstrap
+            ListenableFuture<StreamState> bootstrapStream = new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata)
+                                                                    .bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
+            Futures.addCallback(bootstrapStream, new FutureCallback<StreamState>()
+            {
+                @Override
+                public void onSuccess(StreamState streamState)
+                {
+                    isBootstrapMode = false;
+                    // start participating in the ring.
+                    isSurveyMode = true;
+                    try
+                    {
+                        joinRing();
+                    }
+                    catch (IOException e)
+                    {
+
+
+                    }
+                    logger.info("Resume complete");
+                }
+
+                @Override
+                public void onFailure(Throwable e)
+                {
+                    logger.error("Error during bootstrap: " + e.getCause().getMessage(), e.getCause());
+                }
+            });
+            try
+            {
+                bootstrapStream.get();
+                return true;
+            }
+            catch (Throwable e)
+            {
+                logger.error("Error while waiting on bootstrap to complete. Bootstrap will have to be restarted.", e);
+                return false;
+            }
+        }
+        else
+        {
+            logger.info("Resuming bootstrap is requested, but the node is already bootstrapped.");
+            return false;
+        }
     }
 
     public boolean isBootstrapMode()

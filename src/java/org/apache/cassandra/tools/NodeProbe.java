@@ -1194,6 +1194,11 @@ public class NodeProbe implements AutoCloseable
     {
         return ssProxy.getLoggingLevels();
     }
+
+    public boolean resumeBootstrap()
+    {
+        return ssProxy.resumeBootstrap();
+    }
 }
 
 class ColumnFamilyStoreMBeanIterator implements Iterator<Map.Entry<String, ColumnFamilyStoreMBean>>

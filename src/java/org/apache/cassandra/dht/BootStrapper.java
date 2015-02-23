@@ -21,8 +21,8 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
 
+import com.google.common.util.concurrent.ListenableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +37,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.streaming.StreamState;
 
 public class BootStrapper
 {
@@ -58,7 +59,7 @@ public class BootStrapper
         this.tokenMetadata = tmd;
     }
 
-    public void bootstrap(StreamStateStore stateStore, boolean useStrictConsistency)
+    public ListenableFuture<StreamState> bootstrap(StreamStateStore stateStore, boolean useStrictConsistency)
     {
         logger.debug("Beginning bootstrap process");
 
@@ -77,19 +78,7 @@ public class BootStrapper
             streamer.addRanges(keyspaceName, strategy.getPendingAddressRanges(tokenMetadata, tokens, address));
         }
 
-        try
-        {
-            streamer.fetchAsync().get();
-            StorageService.instance.finishBootstrapping();
-        }
-        catch (InterruptedException e)
-        {
-            throw new RuntimeException("Interrupted while waiting on boostrap to complete. Bootstrap will have to be restarted.");
-        }
-        catch (ExecutionException e)
-        {
-            throw new RuntimeException("Error during bootstrap: " + e.getCause().getMessage(), e.getCause());
-        }
+        return streamer.fetchAsync();
     }
 
     /**
