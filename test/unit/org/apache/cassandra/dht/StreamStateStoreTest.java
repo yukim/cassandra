@@ -46,9 +46,13 @@ public class StreamStateStoreTest
         session.addStreamRequest("keyspace1", Collections.singleton(range), Collections.singleton("cf"), 0);
 
         StreamStateStore store = new StreamStateStore();
-        // session compete event makes data available for keyspace/ranges
+        // session complete event that is not completed makes data not available for keyspace/ranges
         store.handleStreamEvent(new StreamEvent.SessionCompleteEvent(session));
+        assertFalse(store.isDataAvailable("keyspace1", factory.fromString("50")));
 
+        // successfully completed session adds available keyspace/ranges
+        session.state(StreamSession.State.COMPLETE);
+        store.handleStreamEvent(new StreamEvent.SessionCompleteEvent(session));
         // check if token in range (0, 100] appears available.
         assertTrue(store.isDataAvailable("keyspace1", factory.fromString("50")));
         // check if token out of range returns false
@@ -61,6 +65,7 @@ public class StreamStateStoreTest
         Range<Token> range2 = new Range<>(factory.fromString("100"), factory.fromString("200"));
         session = new StreamSession(local, local, new DefaultConnectionFactory(), 0, true);
         session.addStreamRequest("keyspace1", Collections.singleton(range2), Collections.singleton("cf"), 0);
+        session.state(StreamSession.State.COMPLETE);
         store.handleStreamEvent(new StreamEvent.SessionCompleteEvent(session));
 
         // newly added range should be available

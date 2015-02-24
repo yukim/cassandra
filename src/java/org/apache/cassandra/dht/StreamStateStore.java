@@ -64,9 +64,12 @@ public class StreamStateStore implements StreamEventHandler
         if (event.eventType == StreamEvent.Type.STREAM_COMPLETE)
         {
             StreamEvent.SessionCompleteEvent se = (StreamEvent.SessionCompleteEvent) event;
-            for (StreamRequest request : se.requests)
+            if (se.success)
             {
-                SystemKeyspace.updateAvailableRanges(request.keyspace, request.ranges);
+                for (StreamRequest request : se.requests)
+                {
+                    SystemKeyspace.updateAvailableRanges(request.keyspace, request.ranges);
+                }
             }
         }
     }
