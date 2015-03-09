@@ -177,7 +177,7 @@ public class TraceState implements ProgressEventNotifier
         if (notify)
             notifyActivity();
 
-        TraceState.trace(sessionIdBytes, message, elapsed(), ttl);
+        TraceState.mutateWithTracing(sessionIdBytes, message, elapsed(), ttl);
 
         for (ProgressListener listener : listeners)
         {
@@ -185,7 +185,7 @@ public class TraceState implements ProgressEventNotifier
         }
     }
 
-    public static void trace(final ByteBuffer sessionId, final String message, final int elapsed, final int ttl)
+    public static void mutateWithTracing(final ByteBuffer sessionId, final String message, final int elapsed, final int ttl)
     {
         final String threadName = Thread.currentThread().getName();
 

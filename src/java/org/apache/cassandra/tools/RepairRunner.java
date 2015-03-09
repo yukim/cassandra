@@ -86,7 +86,13 @@ public class RepairRunner extends JMXNotificationProgressListener
     }
 
     @Override
-    public void handleConnectionError(long timestamp, String message)
+    public void handleConnectionClosed(long timestamp, String message)
+    {
+        handleConnectionFailed(timestamp, message);
+    }
+
+    @Override
+    public void handleConnectionFailed(long timestamp, String message)
     {
         error = new IOException(String.format("[%s] JMX connection closed. You should check server log for repair status of keyspace %s"
                                                + "(Subsequent keyspaces are not going to be repaired).",

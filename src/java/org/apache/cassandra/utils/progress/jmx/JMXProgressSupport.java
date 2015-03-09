@@ -50,7 +50,7 @@ public class JMXProgressSupport implements ProgressListener
                                                      event.getMessage());
         Map<String, Integer> userData = new HashMap<>();
         userData.put("type", event.getType().ordinal());
-        userData.put("progressed", event.getProgressed());
+        userData.put("progressCount", event.getProgressCount());
         userData.put("total", event.getTotal());
         notification.setUserData(userData);
         broadcaster.sendNotification(notification);

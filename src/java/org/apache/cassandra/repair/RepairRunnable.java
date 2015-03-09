@@ -98,13 +98,18 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         }
     }
 
+    protected void fireErrorAndComplete(String tag, int progressCount, int totalProgress, String message)
+    {
+        fireProgressEvent(tag, new ProgressEvent(ProgressEventType.ERROR, progressCount, totalProgress, message));
+        fireProgressEvent(tag, new ProgressEvent(ProgressEventType.COMPLETE, progressCount, totalProgress));
+    }
+
     protected void runMayThrow() throws Exception
     {
         final TraceState traceState;
 
         final String tag = "repair:" + cmd;
 
-        // count total number of progress this task should be made
         final AtomicInteger progress = new AtomicInteger();
         final int totalProgress = 3 + options.getRanges().size(); // calculate neighbors, validation, prepare for repair + number of ranges to repair
 
@@ -156,9 +161,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         catch (IllegalArgumentException e)
         {
             logger.error("Repair failed:", e);
-            fireProgressEvent(tag,
-                              new ProgressEvent(ProgressEventType.ERROR, progress.get(), totalProgress, e.getMessage()));
-            fireProgressEvent(tag, new ProgressEvent(ProgressEventType.COMPLETE, progress.get(), totalProgress));
+            fireErrorAndComplete(tag, progress.get(), totalProgress, e.getMessage());
             return;
         }
 
@@ -171,9 +174,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         }
         catch (IllegalArgumentException e)
         {
-            fireProgressEvent(tag,
-                              new ProgressEvent(ProgressEventType.ERROR, progress.get(), totalProgress, e.getMessage()));
-            fireProgressEvent(tag, new ProgressEvent(ProgressEventType.COMPLETE, progress.get(), totalProgress));
+            fireErrorAndComplete(tag, progress.get(), totalProgress, e.getMessage());
             return;
         }
 
@@ -187,9 +188,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         }
         catch (Throwable t)
         {
-            fireProgressEvent(tag,
-                              new ProgressEvent(ProgressEventType.ERROR, progress.get(), totalProgress, t.getMessage()));
-            fireProgressEvent(tag, new ProgressEvent(ProgressEventType.COMPLETE, progress.get(), totalProgress));
+            fireErrorAndComplete(tag, progress.get(), totalProgress, t.getMessage());
             return;
         }
 
@@ -291,8 +290,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
 
             public void onFailure(Throwable t)
             {
-                fireProgressEvent(tag, new ProgressEvent(ProgressEventType.ERROR, progress.get(), totalProgress,
-                                                         t.getMessage()));
+                fireProgressEvent(tag, new ProgressEvent(ProgressEventType.ERROR, progress.get(), totalProgress, t.getMessage()));
                 repairComplete();
             }
 
@@ -301,8 +299,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                 String duration = DurationFormatUtils.formatDurationWords(System.currentTimeMillis() - startTime,
                                                                           true, true);
                 String message = String.format("Repair command #%d finished in %s", cmd, duration);
-                fireProgressEvent(tag,
-                                  new ProgressEvent(ProgressEventType.COMPLETE, progress.get(), totalProgress, message));
+                fireProgressEvent(tag, new ProgressEvent(ProgressEventType.COMPLETE, progress.get(), totalProgress, message));
                 logger.info(message);
                 if (options.isTraced() && traceState != null)
                 {

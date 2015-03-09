@@ -23,7 +23,7 @@ package org.apache.cassandra.utils.progress;
 public class ProgressEvent
 {
     private final ProgressEventType type;
-    private final int progressed;
+    private final int progressCount;
     private final int total;
     private final String message;
 
@@ -32,15 +32,15 @@ public class ProgressEvent
         return new ProgressEvent(ProgressEventType.NOTIFICATION, 0, 0, message);
     }
 
-    public ProgressEvent(ProgressEventType type, int progressed, int total)
+    public ProgressEvent(ProgressEventType type, int progressCount, int total)
     {
-        this(type, progressed, total, null);
+        this(type, progressCount, total, null);
     }
 
-    public ProgressEvent(ProgressEventType type, int progressed, int total, String message)
+    public ProgressEvent(ProgressEventType type, int progressCount, int total, String message)
     {
         this.type = type;
-        this.progressed = progressed;
+        this.progressCount = progressCount;
         this.total = total;
         this.message = message;
     }
@@ -50,9 +50,9 @@ public class ProgressEvent
         return type;
     }
 
-    public int getProgressed()
+    public int getProgressCount()
     {
-        return progressed;
+        return progressCount;
     }
 
     public int getTotal()
@@ -62,7 +62,7 @@ public class ProgressEvent
 
     public double getProgressPercentage()
     {
-        return total != 0 ? progressed * 100 / (double) total : 0;
+        return total != 0 ? progressCount * 100 / (double) total : 0;
     }
 
     /**

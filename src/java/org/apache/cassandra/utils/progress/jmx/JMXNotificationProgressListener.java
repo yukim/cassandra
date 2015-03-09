@@ -47,10 +47,16 @@ public abstract class JMXNotificationProgressListener implements ProgressListene
     public void handleNotificationLost(long timestamp, String message) {}
 
     /**
-     * Called when JMX connection error happens.
-     * Specifically when {@link JMXConnectionNotification#FAILED}/{@link JMXConnectionNotification#CLOSED} message is received.
+     * Called when JMX connection is closed.
+     * Specifically when {@link JMXConnectionNotification#CLOSED} message is received.
      */
-    public void handleConnectionError(long timestamp, String message) {}
+    public void handleConnectionClosed(long timestamp, String message) {}
+
+    /**
+     * Called when JMX connection is failed.
+     * Specifically when {@link JMXConnectionNotification#FAILED} message is received.
+     */
+    public void handleConnectionFailed(long timestamp, String message) {}
 
     @SuppressWarnings("unchecked")
     @Override
@@ -65,7 +71,7 @@ public abstract class JMXNotificationProgressListener implements ProgressListene
                     Map<String, Integer> progress = (Map<String, Integer>) notification.getUserData();
                     String message = notification.getMessage();
                     ProgressEvent event = new ProgressEvent(ProgressEventType.values()[progress.get("type")],
-                                                            progress.get("progressed"),
+                                                            progress.get("progressCount"),
                                                             progress.get("total"),
                                                             message);
                     this.progress(tag, event);
@@ -77,8 +83,11 @@ public abstract class JMXNotificationProgressListener implements ProgressListene
                 break;
 
             case JMXConnectionNotification.FAILED:
+                handleConnectionFailed(notification.getTimeStamp(), notification.getMessage());
+                break;
+
             case JMXConnectionNotification.CLOSED:
-                handleConnectionError(notification.getTimeStamp(), notification.getMessage());
+                handleConnectionClosed(notification.getTimeStamp(), notification.getMessage());
                 break;
         }
     }
