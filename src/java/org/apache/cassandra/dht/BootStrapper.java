@@ -21,6 +21,7 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import org.slf4j.Logger;
@@ -37,9 +38,15 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.streaming.StreamEvent;
+import org.apache.cassandra.streaming.StreamEventHandler;
+import org.apache.cassandra.streaming.StreamResultFuture;
 import org.apache.cassandra.streaming.StreamState;
+import org.apache.cassandra.utils.progress.ProgressEvent;
+import org.apache.cassandra.utils.progress.ProgressEventNotifierSupport;
+import org.apache.cassandra.utils.progress.ProgressEventType;
 
-public class BootStrapper
+public class BootStrapper extends ProgressEventNotifierSupport
 {
     private static final Logger logger = LoggerFactory.getLogger(BootStrapper.class);
 
@@ -78,7 +85,70 @@ public class BootStrapper
             streamer.addRanges(keyspaceName, strategy.getPendingAddressRanges(tokenMetadata, tokens, address));
         }
 
-        return streamer.fetchAsync();
+        StreamResultFuture bootstrapStreamResult = streamer.fetchAsync();
+        bootstrapStreamResult.addEventListener(new StreamEventHandler()
+        {
+            private final AtomicInteger receivedFiles = new AtomicInteger();
+            private final AtomicInteger totalFilesToReceive = new AtomicInteger();
+
+            @Override
+            public void handleStreamEvent(StreamEvent event)
+            {
+                switch (event.eventType)
+                {
+                    case STREAM_PREPARED:
+                        StreamEvent.SessionPreparedEvent prepared = (StreamEvent.SessionPreparedEvent) event;
+                        int currentTotal = totalFilesToReceive.addAndGet((int) prepared.session.getTotalFilesToReceive());
+                        ProgressEvent prepareProgress = new ProgressEvent(ProgressEventType.PROGRESS, receivedFiles.get(), currentTotal, "prepare with " + prepared.session.peer + " complete");
+                        fireProgressEvent("bootstrap", prepareProgress);
+                        break;
+
+                    case FILE_PROGRESS:
+                        StreamEvent.ProgressEvent progress = (StreamEvent.ProgressEvent) event;
+                        if (progress.progress.isCompleted())
+                        {
+                            int received = receivedFiles.incrementAndGet();
+                            ProgressEvent currentProgress = new ProgressEvent(ProgressEventType.PROGRESS, received, totalFilesToReceive.get(), "received file " + progress.progress.fileName);
+                            fireProgressEvent("bootstrap", currentProgress);
+                        }
+                        break;
+
+                    case STREAM_COMPLETE:
+                        StreamEvent.SessionCompleteEvent completeEvent = (StreamEvent.SessionCompleteEvent) event;
+                        ProgressEvent completeProgress = new ProgressEvent(ProgressEventType.PROGRESS, receivedFiles.get(), totalFilesToReceive.get(), "session with " + completeEvent.peer + " complete");
+                        fireProgressEvent("bootstrap", completeProgress);
+                        break;
+                }
+            }
+
+            @Override
+            public void onSuccess(StreamState streamState)
+            {
+                ProgressEventType type;
+                String message;
+
+                if (streamState.hasFailedSession())
+                {
+                    type = ProgressEventType.ERROR;
+                    message = "Some bootstrap stream failed";
+                }
+                else
+                {
+                    type = ProgressEventType.SUCCESS;
+                    message = "Bootstrap streaming success";
+                }
+                ProgressEvent currentProgress = new ProgressEvent(type, receivedFiles.get(), totalFilesToReceive.get(), message);
+                fireProgressEvent("bootstrap", currentProgress);
+            }
+
+            @Override
+            public void onFailure(Throwable throwable)
+            {
+                ProgressEvent currentProgress = new ProgressEvent(ProgressEventType.ERROR, receivedFiles.get(), totalFilesToReceive.get(), throwable.getMessage());
+                fireProgressEvent("bootstrap", currentProgress);
+            }
+        });
+        return bootstrapStreamResult;
     }
 
     /**

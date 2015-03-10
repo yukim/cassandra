@@ -163,7 +163,11 @@ public class NodeTool
                  .withDefaultCommand(Help.class)
                  .withCommands(commands);
 
-        builder.withGroup("bootstrap").withDefaultCommand(Help.class).withCommand(BootstrapResume.class);
+        // bootstrap commands
+        builder.withGroup("bootstrap")
+                .withDescription("Monitor/manage node's bootstrap process")
+                .withDefaultCommand(Help.class)
+                .withCommand(BootstrapResume.class);
 
         Cli<Runnable> parser = builder.build();
 
@@ -2738,13 +2742,13 @@ public class NodeTool
         @Override
         protected void execute(NodeProbe probe)
         {
-            if (probe.resumeBootstrap())
+            try
             {
-                System.out.println("resuming bootstrap");
+                probe.resumeBootstrap(System.out);
             }
-            else
+            catch (IOException e)
             {
-                System.out.println("cannot bootstrap already bootstrapped node");
+                throw new IOError(e);
             }
         }
     }

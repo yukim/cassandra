@@ -70,6 +70,8 @@ import org.apache.cassandra.thrift.TokenRange;
 import org.apache.cassandra.thrift.cassandraConstants;
 import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.utils.*;
+import org.apache.cassandra.utils.progress.ProgressEvent;
+import org.apache.cassandra.utils.progress.ProgressEventType;
 import org.apache.cassandra.utils.progress.jmx.JMXProgressSupport;
 
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
@@ -1059,8 +1061,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         setMode(Mode.JOINING, "Starting to bootstrap...", true);
-        ListenableFuture<StreamState> bootstrapStream = new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata)
-                                                                        .bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
+        BootStrapper bootstrapper = new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata);
+        bootstrapper.addProgressListener(progressSupport);
+        ListenableFuture<StreamState> bootstrapStream = bootstrapper.bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
         Futures.addCallback(bootstrapStream, new FutureCallback<StreamState>()
         {
             @Override
@@ -1097,8 +1100,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             // get bootstrap tokens saved in system keyspace
             final Collection<Token> tokens = SystemKeyspace.getSavedTokens();
             // already bootstrapped ranges are filtered during bootstrap
-            ListenableFuture<StreamState> bootstrapStream = new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata)
-                                                                    .bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
+            BootStrapper bootstrapper = new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata);
+            bootstrapper.addProgressListener(progressSupport);
+            ListenableFuture<StreamState> bootstrapStream = bootstrapper.bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
             Futures.addCallback(bootstrapStream, new FutureCallback<StreamState>()
             {
                 @Override
@@ -1106,35 +1110,31 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 {
                     isBootstrapMode = false;
                     // start participating in the ring.
+                    // pretend we are in survey mode so we can use joinRing() here
                     isSurveyMode = true;
                     try
                     {
+                        progressSupport.progress("bootstrap", ProgressEvent.createNotification("Joining ring..."));
                         joinRing();
                     }
-                    catch (IOException e)
+                    catch (IOException ignore)
                     {
-
-
+                        // joinRing with survey mode does not throw IOException
                     }
+                    progressSupport.progress("bootstrap", new ProgressEvent(ProgressEventType.COMPLETE, 1, 1, "Resume bootstrap complete"));
                     logger.info("Resume complete");
                 }
 
                 @Override
                 public void onFailure(Throwable e)
                 {
-                    logger.error("Error during bootstrap: " + e.getCause().getMessage(), e.getCause());
+                    String message = "Error during bootstrap: " + e.getCause().getMessage();
+                    logger.error(message, e.getCause());
+                    progressSupport.progress("bootstrap", new ProgressEvent(ProgressEventType.ERROR, 1, 1, message));
+                    progressSupport.progress("bootstrap", new ProgressEvent(ProgressEventType.COMPLETE, 1, 1, "Resume bootstrap complete"));
                 }
             });
-            try
-            {
-                bootstrapStream.get();
-                return true;
-            }
-            catch (Throwable e)
-            {
-                logger.error("Error while waiting on bootstrap to complete. Bootstrap will have to be restarted.", e);
-                return false;
-            }
+            return true;
         }
         else
         {
