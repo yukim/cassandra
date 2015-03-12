@@ -628,6 +628,11 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             else if (shouldBootstrap())
             {
                 checkForEndpointCollision();
+                if (Boolean.getBoolean("cassandra.reset_bootstrap_progress"))
+                {
+                    logger.info("Resetting bootstrap progress to start fresh");
+                    SystemKeyspace.resetAvailableRanges();
+                }
             }
 
             // have to start the gossip service before we can see any info on other nodes.  this is necessary

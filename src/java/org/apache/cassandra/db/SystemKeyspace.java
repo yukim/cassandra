@@ -996,6 +996,12 @@ public final class SystemKeyspace
         return ImmutableSet.copyOf(result);
     }
 
+    public static void resetAvailableRanges()
+    {
+        ColumnFamilyStore availableRanges = Keyspace.open(NAME).getColumnFamilyStore(AVAILABLE_RANGES);
+        availableRanges.truncateBlocking();
+    }
+
     private static ByteBuffer rangeToBytes(Range<Token> range)
     {
         try
