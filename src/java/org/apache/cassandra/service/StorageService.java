@@ -628,11 +628,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             else if (shouldBootstrap())
             {
                 checkForEndpointCollision();
-                if (Boolean.getBoolean("cassandra.reset_bootstrap_progress"))
-                {
-                    logger.info("Resetting bootstrap progress to start fresh");
-                    SystemKeyspace.resetAvailableRanges();
-                }
             }
 
             // have to start the gossip service before we can see any info on other nodes.  this is necessary
@@ -1036,6 +1031,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
         if (!Gossiper.instance.seenAnySeed())
             throw new IllegalStateException("Unable to contact any seeds!");
+
+        if (Boolean.getBoolean("cassandra.reset_bootstrap_progress"))
+        {
+            logger.info("Resetting bootstrap progress to start fresh");
+            SystemKeyspace.resetAvailableRanges();
+        }
+
         setMode(Mode.JOINING, "Starting to bootstrap...", true);
         new BootStrapper(FBUtilities.getBroadcastAddress(), tokens, tokenMetadata).bootstrap(streamStateStore, !replacing && useStrictConsistency); // handles token update
         logger.info("Bootstrap completed! for the tokens {}", tokens);
