@@ -435,9 +435,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             for (Map.Entry<InetAddress, EndpointState> entry : Gossiper.instance.getEndpointStates())
             {
-
-                if (entry.getValue().getApplicationState(ApplicationState.STATUS) == null)
-                        continue;
+                // ignore local node or empty status
+                if (entry.getKey().equals(FBUtilities.getBroadcastAddress()) || entry.getValue().getApplicationState(ApplicationState.STATUS) == null)
+                    continue;
                 String[] pieces = entry.getValue().getApplicationState(ApplicationState.STATUS).value.split(VersionedValue.DELIMITER_STR, -1);
                 assert (pieces.length > 0);
                 String state = pieces[0];
