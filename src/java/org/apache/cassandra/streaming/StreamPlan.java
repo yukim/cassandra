@@ -38,7 +38,7 @@ public class StreamPlan
     private final long repairedAt;
     private final StreamCoordinator coordinator;
 
-    private boolean flushBeforeTransfer = true;
+private boolean flushBeforeTransfer = true;
 
     /**
      * Start building stream plan.

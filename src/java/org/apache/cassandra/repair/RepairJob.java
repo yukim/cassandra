@@ -115,10 +115,6 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         {
             public ListenableFuture<List<SyncStat>> apply(List<TreeResponse> trees) throws Exception
             {
-                // Unregister from FailureDetector once we've completed synchronizing Merkle trees.
-                // After this point, we rely on tcp_keepalive for individual sockets to notify us when a connection is down.
-                // See CASSANDRA-3569
-                FailureDetector.instance.unregisterFailureDetectionEventListener(session);
 
                 InetAddress local = FBUtilities.getLocalAddress();
 
