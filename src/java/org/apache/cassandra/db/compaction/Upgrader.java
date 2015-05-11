@@ -40,7 +40,7 @@ public class Upgrader
 
     private final OperationType compactionType = OperationType.UPGRADE_SSTABLES;
     private final CompactionController controller;
-    private final AbstractCompactionStrategy strategy;
+    private final CompactionStrategyManager strategyManager;
     private final long estimatedRows;
 
     private final OutputHandler outputHandler;
@@ -55,9 +55,9 @@ public class Upgrader
 
         this.controller = new UpgradeController(cfs);
 
-        this.strategy = cfs.getCompactionStrategy();
+        this.strategyManager = cfs.getCompactionStrategyManager();
         long estimatedTotalKeys = Math.max(cfs.metadata.getMinIndexInterval(), SSTableReader.getApproximateKeyCount(Arrays.asList(this.sstable)));
-        long estimatedSSTables = Math.max(1, SSTableReader.getTotalBytes(Arrays.asList(this.sstable)) / strategy.getMaxSSTableBytes());
+        long estimatedSSTables = Math.max(1, SSTableReader.getTotalBytes(Arrays.asList(this.sstable)) / strategyManager.getMaxSSTableBytes());
         this.estimatedRows = (long) Math.ceil((double) estimatedTotalKeys / estimatedSSTables);
     }
 
@@ -81,9 +81,8 @@ public class Upgrader
     {
         outputHandler.output("Upgrading " + sstable);
         Set<SSTableReader> toUpgrade = Sets.newHashSet(sstable);
-
         try (SSTableRewriter writer = new SSTableRewriter(cfs, toUpgrade, CompactionTask.getMaxDataAge(toUpgrade), true);
-             AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(toUpgrade))
+             AbstractCompactionStrategy.ScannerList scanners = strategyManager.getScanners(toUpgrade))
         {
             Iterator<AbstractCompactedRow> iter = new CompactionIterable(compactionType, scanners.scanners, controller, DatabaseDescriptor.getSSTableFormat()).iterator();
             writer.switchWriter(createCompactionWriter(sstable.getSSTableMetadata().repairedAt));

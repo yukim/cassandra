@@ -338,7 +338,7 @@ public class ColumnFamilyMetrics
         {
             public Integer getValue()
             {
-                return cfs.getCompactionStrategy().getEstimatedRemainingTasks();
+                return cfs.getCompactionStrategyManager().getEstimatedRemainingTasks();
             }
         });
         liveSSTableCount = createColumnFamilyGauge("LiveSSTableCount", new Gauge<Integer>()
