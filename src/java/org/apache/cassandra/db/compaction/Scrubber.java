@@ -36,6 +36,7 @@ public class Scrubber implements Closeable
     public final SSTableReader sstable;
     public final File destination;
     public final boolean skipCorrupted;
+    public final boolean validateColumns;
 
     private final CompactionController controller;
     private final boolean isCommutative;
@@ -64,17 +65,18 @@ public class Scrubber implements Closeable
     };
     private final SortedSet<Row> outOfOrderRows = new TreeSet<>(rowComparator);
 
-    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, boolean skipCorrupted) throws IOException
+    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, boolean skipCorrupted, boolean checkData) throws IOException
     {
-        this(cfs, sstable, skipCorrupted, new OutputHandler.LogOutput(), false);
+        this(cfs, sstable, skipCorrupted, checkData, new OutputHandler.LogOutput(), false);
     }
 
-    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, boolean skipCorrupted, OutputHandler outputHandler, boolean isOffline) throws IOException
+    public Scrubber(ColumnFamilyStore cfs, SSTableReader sstable, boolean skipCorrupted, boolean checkData, OutputHandler outputHandler, boolean isOffline) throws IOException
     {
         this.cfs = cfs;
         this.sstable = sstable;
         this.outputHandler = outputHandler;
         this.skipCorrupted = skipCorrupted;
+        this.validateColumns = checkData;
 
         List<SSTableReader> toScrub = Collections.singletonList(sstable);
 
@@ -189,7 +191,7 @@ public class Scrubber implements Closeable
                     if (dataSize > dataFile.length())
                         throw new IOError(new IOException("Impossible row size " + dataSize));
 
-                    SSTableIdentityIterator atoms = new SSTableIdentityIterator(sstable, dataFile, key, dataSize, true);
+                    SSTableIdentityIterator atoms = new SSTableIdentityIterator(sstable, dataFile, key, dataSize, validateColumns);
                     if (prevKey != null && prevKey.compareTo(key) > 0)
                     {
                         saveOutOfOrderRow(prevKey, key, atoms);
@@ -219,7 +221,7 @@ public class Scrubber implements Closeable
                         key = sstable.partitioner.decorateKey(currentIndexKey);
                         try
                         {
-                            SSTableIdentityIterator atoms = new SSTableIdentityIterator(sstable, dataFile, key, dataSize, true);
+                            SSTableIdentityIterator atoms = new SSTableIdentityIterator(sstable, dataFile, key, dataSize, validateColumns);
                             if (prevKey != null && prevKey.compareTo(key) > 0)
                             {
                                 saveOutOfOrderRow(prevKey, key, atoms);

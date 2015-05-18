@@ -233,7 +233,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      *
      * Scrubbed CFs will be snapshotted first, if disableSnapshot is false
      */
-    public void scrub(boolean disableSnapshot, boolean skipCorrupted, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
+    public void scrub(boolean disableSnapshot, boolean skipCorrupted, boolean checkData, String keyspaceName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException;
 
     /**
      * Rewrite all sstables to the latest version.
