@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -20,11 +20,11 @@ package org.apache.cassandra.dht;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.apache.cassandra.db.DecoratedKey;
@@ -49,6 +49,19 @@ public class Murmur3Partitioner implements IPartitioner
     private static final int HEAP_SIZE = (int) ObjectSizes.measureDeep(MINIMUM);
 
     public static final Murmur3Partitioner instance = new Murmur3Partitioner();
+
+    private final Splitter splitter = new Splitter(this)
+    {
+        public Token tokenForValue(BigInteger value)
+        {
+            return new LongToken(value.longValue());
+        }
+
+        public BigInteger valueForToken(Token token)
+        {
+            return BigInteger.valueOf(((LongToken) token).token);
+        }
+    };
 
     public DecoratedKey decorateKey(ByteBuffer key)
     {
@@ -273,38 +286,13 @@ public class Murmur3Partitioner implements IPartitioner
         return LongType.instance;
     }
 
-    @Override
-    public List<Token> splitFullRange(int parts)
-    {
-        if(parts == 1)
-            return Arrays.asList(getMaximumToken());
-        return RandomPartitioner.splitRange(getMinimumToken(), getMaximumToken(), parts, this);
-    }
-
-    @Override
-    public List<Token> splitRange(Token start, Token end, int parts)
-    {
-        return RandomPartitioner.splitRange(start, end, parts, this);
-    }
-
-    public Token tokenForValue(BigInteger value)
-    {
-        return new LongToken(value.longValue());
-    }
-
     public Token getMaximumToken()
     {
         return new LongToken(Long.MAX_VALUE);
     }
 
-    public BigInteger valueForToken(Token token)
+    public Optional<Splitter> splitter()
     {
-        return BigInteger.valueOf(((LongToken)token).token);
-    }
-
-    @Override
-    public boolean supportsSplitting()
-    {
-        return true;
+        return Optional.of(splitter);
     }
 }

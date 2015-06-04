@@ -76,6 +76,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.RangeStreamer;
 import org.apache.cassandra.dht.RingPosition;
+import org.apache.cassandra.dht.Splitter;
 import org.apache.cassandra.dht.StreamStateStore;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.AlreadyExistsException;
@@ -4298,7 +4299,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public static List<RowPosition> getDiskBoundaries(ColumnFamilyStore cfs)
     {
-        if (!cfs.partitioner.supportsSplitting())
+        if (!cfs.partitioner.splitter().isPresent())
             return null;
 
         Collection<Range<Token>> lr = StorageService.instance.getLocalRanges(cfs.keyspace.getName());
@@ -4325,23 +4326,21 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public static List<RowPosition> getDiskBoundaries(List<Range<Token>> localRanges, IPartitioner partitioner, Directories.DataDirectory[] dataDirectories)
     {
-        if (!partitioner.supportsSplitting())
-            return null;
-
+        Splitter splitter = partitioner.splitter().get();
         RowPosition max = partitioner.getMaximumToken().maxKeyBound();
 
         List<Token> boundaries;
 
         if (DatabaseDescriptor.getNumTokens() > 1)
         {
-            boundaries = partitioner.splitFullRange(dataDirectories.length);
+            boundaries = splitter.splitFullRange(dataDirectories.length);
             return getDiskBoundariesForVNodes(localRanges, boundaries, max);
         }
         else
         {
             Token first = localRanges.get(0).left;
             Token last = localRanges.get(localRanges.size() - 1).right;
-            boundaries = partitioner.splitRange(first, last, dataDirectories.length);
+            boundaries = splitter.splitRange(first, last, dataDirectories.length);
             List<RowPosition> diskBoundaries = new ArrayList<>();
 
             for (int i = 0; i < boundaries.size() - 1; i++)

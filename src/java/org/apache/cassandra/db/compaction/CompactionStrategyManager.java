@@ -182,7 +182,7 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public static int getCompactionStrategyIndex(ColumnFamilyStore cfs, Descriptor descriptor)
     {
-        if (!cfs.partitioner.supportsSplitting())
+        if (!cfs.partitioner.splitter().isPresent())
             return 0;
 
         Directories.DataDirectory[] directories = cfs.directories.getWriteableLocations();
@@ -233,7 +233,7 @@ public class CompactionStrategyManager implements INotificationConsumer
             strategy.shutdown();
         repaired.clear();
         unrepaired.clear();
-        if (cfs.partitioner.supportsSplitting())
+        if (cfs.partitioner.splitter().isPresent())
         {
             locations = cfs.directories.getWriteableLocations();
             for (int i = 0; i < locations.length; i++)
@@ -334,7 +334,7 @@ public class CompactionStrategyManager implements INotificationConsumer
             SSTableListChangedNotification listChangedNotification = (SSTableListChangedNotification) notification;
 
             Directories.DataDirectory [] locations = cfs.directories.getWriteableLocations();
-            int locationSize = cfs.partitioner.supportsSplitting() ? locations.length : 1;
+            int locationSize = cfs.partitioner.splitter().isPresent() ? locations.length : 1;
 
             List<Set<SSTableReader>> repairedRemoved = new ArrayList<>(locationSize);
             List<Set<SSTableReader>> repairedAdded = new ArrayList<>(locationSize);

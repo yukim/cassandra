@@ -17,10 +17,10 @@
  */
 package org.apache.cassandra.dht;
 
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -81,14 +81,8 @@ public interface IPartitioner
 
     public AbstractType<?> getTokenValidator();
 
-    public List<Token> splitFullRange(int parts);
-
-    public List<Token> splitRange(Token start, Token end, int parts);
-
-    public boolean supportsSplitting();
-
-    public Token tokenForValue(BigInteger value);
-
-    public BigInteger valueForToken(Token token);
-
+    default Optional<Splitter> splitter()
+    {
+        return Optional.empty();
+    }
 }

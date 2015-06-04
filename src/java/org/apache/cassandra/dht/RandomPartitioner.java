@@ -48,6 +48,19 @@ public class RandomPartitioner implements IPartitioner
 
     public static final RandomPartitioner instance = new RandomPartitioner();
 
+    private final Splitter splitter = new Splitter(this)
+    {
+        public Token tokenForValue(BigInteger value)
+        {
+            return new BigIntegerToken(value);
+        }
+
+        public BigInteger valueForToken(Token token)
+        {
+            return ((BigIntegerToken)token).getTokenValue();
+        }
+    };
+
     public DecoratedKey decorateKey(ByteBuffer key)
     {
         return new CachedHashDecoratedKey(getToken(key), key);
@@ -192,69 +205,19 @@ public class RandomPartitioner implements IPartitioner
         return ownerships;
     }
 
-    public AbstractType<?> getTokenValidator()
-    {
-        return IntegerType.instance;
-    }
-
-    @Override
-    public List<Token> splitFullRange(int parts)
-    {
-        if(parts == 1)
-            return Arrays.asList(getMaximumToken());
-
-        return splitRange(getMinimumToken(), getMaximumToken(), parts, this);
-    }
-
-    public static List<Token> splitRange(Token start, Token end, int parts, IPartitioner partitioner)
-    {
-        if (parts == 1)
-            return Collections.singletonList(partitioner.getMaximumToken());
-
-        BigInteger startValue = partitioner.valueForToken(start);
-        BigInteger endValue = partitioner.valueForToken(end.equals(partitioner.getMinimumToken()) ? partitioner.getMaximumToken() : end);
-        List<BigInteger> boundaries = new ArrayList<>(parts);
-
-        BigInteger partWidth = endValue.subtract(startValue).divide(BigInteger.valueOf(parts));
-        boundaries.add(startValue.add(partWidth));
-
-        for (int i = 1; i < parts - 1; i++)
-            boundaries.add(boundaries.get(i - 1).add(partWidth));
-
-        List<Token> tokenBoundaries = new ArrayList<>(parts);
-        for (BigInteger boundary : boundaries)
-            tokenBoundaries.add(partitioner.tokenForValue(boundary));
-
-        tokenBoundaries.add(partitioner.getMaximumToken());
-
-        return tokenBoundaries;
-    }
-
-    @Override
-    public List<Token> splitRange(Token start, Token end, int parts)
-    {
-        return splitRange(start, end, parts, this);
-    }
-
-    public Token tokenForValue(BigInteger value)
-    {
-        return new BigIntegerToken(value);
-    }
-
-    @Override
-    public BigInteger valueForToken(Token token)
-    {
-        return ((BigIntegerToken)token).getTokenValue();
-    }
-
     public Token getMaximumToken()
     {
         return new BigIntegerToken(MAXIMUM);
     }
 
-    @Override
-    public boolean supportsSplitting()
+    public AbstractType<?> getTokenValidator()
     {
-        return true;
+        return IntegerType.instance;
     }
+
+    public Optional<Splitter> splitter()
+    {
+        return Optional.of(splitter);
+    }
+
 }

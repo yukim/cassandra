@@ -441,7 +441,7 @@ public class CompactionManager implements CompactionManagerMBean
 
             private boolean inCorrectLocation(SSTableReader sstable)
             {
-                if (!cfs.partitioner.supportsSplitting())
+                if (!cfs.partitioner.splitter().isPresent())
                     return true;
 
                 int directoryIndex = CompactionStrategyManager.getCompactionStrategyIndex(cfs, sstable.descriptor);

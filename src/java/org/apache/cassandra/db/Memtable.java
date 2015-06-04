@@ -20,7 +20,6 @@ package org.apache.cassandra.db;
 import java.io.File;
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -34,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Splitter;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -241,15 +241,14 @@ public class Memtable
         else
             localRanges = Collections.emptyList();
 
-        if (!cfs.partitioner.supportsSplitting() || localRanges.isEmpty())
-            return Arrays.asList(new FlushRunnable(lastReplayPosition.get()));
+        if (!cfs.partitioner.splitter().isPresent() || localRanges.isEmpty())
+            return Collections.singletonList(new FlushRunnable(lastReplayPosition.get()));
 
         return createFlushRunnables(localRanges);
     }
 
     private List<FlushRunnable> createFlushRunnables(List<Range<Token>> localRanges)
     {
-        assert cfs.partitioner.supportsSplitting();
         Directories.DataDirectory[] locations = cfs.directories.getWriteableLocations();
         List<RowPosition> boundaries = StorageService.getDiskBoundaries(localRanges, cfs.partitioner, locations);
         List<FlushRunnable> runnables = new ArrayList<>(boundaries.size());
