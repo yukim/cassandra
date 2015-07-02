@@ -409,7 +409,7 @@ public class Directories
     }
 
     /**
-     * Returns directory to write snapshot.
+     * Returns directory to write snapshot. If directory does not exist, then one is created.
      *
      * If given {@code location} indicates secondary index, this will return
      * {@code <cf dir>/snapshots/<snapshot name>/.<index name>}.
@@ -672,7 +672,15 @@ public class Directories
     {
         for (File dir : dataPaths)
         {
-            File snapshotDir = getSnapshotDirectory(dir, snapshotName);
+            File snapshotDir;
+            if (dir.getName().startsWith(SECONDARY_INDEX_NAME_SEPARATOR))
+            {
+                snapshotDir = new File(dir.getParentFile(), join(SNAPSHOT_SUBDIR, snapshotName, dir.getName()));
+            }
+            else
+            {
+                snapshotDir = new File(dir, join(SNAPSHOT_SUBDIR, snapshotName));
+            }
             if (snapshotDir.exists())
                 return true;
         }
