@@ -335,10 +335,9 @@ public class ScrubTest
 
                 for (String k : keys)
                 {
-                    RowUpdateBuilder builder = new RowUpdateBuilder(cfs.metadata, 0L, Util.dk(k));
-                    PartitionUpdate update = builder.clustering("someName")
-                                                     .add("val", "someValue")
-                                                     .buildUpdate();
+                    PartitionUpdate update = UpdateBuilder.create(cfs.metadata, Util.dk(k))
+                                                          .newRow("someName").add("val", "someValue")
+                                                          .build();
 
                     writer.append(update.unfilteredIterator());
                 }
