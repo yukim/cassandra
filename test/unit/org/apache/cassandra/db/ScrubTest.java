@@ -64,7 +64,6 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.OutputHandler;
 
 import static org.junit.Assert.*;
 import static org.junit.Assume.assumeTrue;
@@ -370,7 +369,7 @@ public class ScrubTest
                 sstable.last = sstable.first;
 
             try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.SCRUB, sstable);
-                 Scrubber scrubber = new Scrubber(cfs, txn, false, new OutputHandler.LogOutput(), true, true, true))
+                 Scrubber scrubber = new Scrubber(cfs, txn, false, true, true))
             {
                 scrubber.scrub();
             }
