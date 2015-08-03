@@ -42,6 +42,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.CompactionInfo.Holder;
+import org.apache.cassandra.db.compaction.writers.DefaultCompactionWriter;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
@@ -270,7 +271,7 @@ public class CompactionManager implements CompactionManagerMBean
             Iterable<SSTableReader> sstables = Lists.newArrayList(operation.filterSSTables(compacting));
             if (Iterables.isEmpty(sstables))
             {
-                logger.info("No sstables for {}.{}", cfs.keyspace.getName(), cfs.name);
+                logger.info("No sstables to {} for {}.{}", operationType.name(), cfs.keyspace.getName(), cfs.name);
                 return AllSSTableOpStatus.SUCCESSFUL;
             }
 
@@ -430,6 +431,71 @@ public class CompactionManager implements CompactionManagerMBean
                 doCleanupOne(cfStore, txn, cleanupStrategy, ranges, hasIndexes);
             }
         }, OperationType.CLEANUP);
+    }
+
+    public AllSSTableOpStatus rebalanceDisks(final ColumnFamilyStore cfs) throws ExecutionException, InterruptedException
+    {
+        Keyspace keyspace = cfs.keyspace;
+        final Collection<Range<Token>> r = StorageService.instance.getLocalRanges(keyspace.getName());
+        if (r.isEmpty())
+        {
+            logger.info("Rebalance cannot run before a node has joined the ring");
+            return AllSSTableOpStatus.ABORTED;
+        }
+        final List<Range<Token>> localRanges = Range.sort(r);
+
+        final Directories.DataDirectory[] locations = cfs.getDirectories().getWriteableLocations();
+
+        final List<PartitionPosition> diskBoundaries = StorageService.getDiskBoundaries(localRanges, cfs.getPartitioner(), locations);
+        if (diskBoundaries == null)
+        {
+            logger.info("Partitioner does not support splitting");
+            return AllSSTableOpStatus.ABORTED;
+        }
+
+        return parallelAllSSTableOperation(cfs, new OneSSTableOperation()
+        {
+            @Override
+            public Iterable<SSTableReader> filterSSTables(LifecycleTransaction transaction)
+            {
+                Iterable<SSTableReader> sstables = new ArrayList<>(transaction.originals());
+                Iterator<SSTableReader> iter = sstables.iterator();
+                while (iter.hasNext())
+                {
+                    SSTableReader sstable = iter.next();
+                    if (inCorrectLocation(sstable))
+                    {
+                        transaction.cancel(sstable);
+                        iter.remove();
+                    }
+                }
+                return sstables;
+            }
+
+            private boolean inCorrectLocation(SSTableReader sstable)
+            {
+                if (!cfs.getPartitioner().splitter().isPresent())
+                    return true;
+                int directoryIndex = CompactionStrategyManager.getCompactionStrategyIndex(cfs, cfs.getDirectories(), sstable);
+                Directories.DataDirectory[] locations = cfs.getDirectories().getWriteableLocations();
+
+                Directories.DataDirectory location = locations[directoryIndex];
+                PartitionPosition diskLast = diskBoundaries.get(directoryIndex);
+                // the location we get from directoryIndex is based on the first key in the sstable
+                // now we need to make sure the last key is less than the boundary as well:
+                return sstable.descriptor.directory.getAbsolutePath().startsWith(location.location.getAbsolutePath()) && sstable.last.compareTo(diskLast) < 0;
+            }
+
+            @Override
+            public void execute(LifecycleTransaction txn) throws IOException
+            {
+                logger.info("Rebalancing {}", txn.originals());
+                AbstractCompactionTask task = cfs.getCompactionStrategyManager().getCompactionTask(txn, NO_GC, Long.MAX_VALUE);
+                task.setUserDefined(true);
+                task.setCompactionType(OperationType.REBALANCE);
+                task.execute(metrics);
+            }
+        }, OperationType.REBALANCE);
     }
 
     public ListenableFuture<?> submitAntiCompaction(final ColumnFamilyStore cfs,
@@ -878,9 +944,7 @@ public class CompactionManager implements CompactionManagerMBean
 
         logger.info("Cleaning up {}", sstable);
 
-        File compactionFileLocation = cfs.getDirectories().getWriteableLocationAsFile(cfs.getExpectedCompactedFileSize(txn.originals(), OperationType.CLEANUP));
-        if (compactionFileLocation == null)
-            throw new IOException("disk full");
+        File compactionFileLocation = sstable.descriptor.directory;
 
         List<SSTableReader> finished;
         int nowInSec = FBUtilities.nowInSeconds();

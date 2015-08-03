@@ -20,6 +20,7 @@ package org.apache.cassandra.dht;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -47,6 +48,7 @@ public interface IPartitioner
      * Not legal to assign to a node or key.  (But legal to use in range scans.)
      */
     public Token getMinimumToken();
+    public Token getMaximumToken();
 
     /**
      * @return a Token that can be used to route a given key
@@ -84,4 +86,9 @@ public interface IPartitioner
      * Used by secondary indices.
      */
     public AbstractType<?> partitionOrdering();
+
+    default Optional<Splitter> splitter()
+    {
+        return Optional.empty();
+    }
 }

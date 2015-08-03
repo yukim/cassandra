@@ -63,6 +63,7 @@ import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableMultiWriter;
+import org.apache.cassandra.io.sstable.SSTableTxnWriter;
 import org.apache.cassandra.io.sstable.format.*;
 import org.apache.cassandra.io.sstable.format.big.BigFormat;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
@@ -124,6 +125,20 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                                                           new LinkedBlockingQueue<Runnable>(),
                                                                                           new NamedThreadFactory("MemtableFlushWriter"),
                                                                                           "internal");
+
+    private static final ExecutorService [] perDiskflushExecutors = new JMXEnabledThreadPoolExecutor[DatabaseDescriptor.getAllDataFileLocations().length];
+    static
+    {
+        for (int i = 0; i < DatabaseDescriptor.getAllDataFileLocations().length; i++)
+        {
+            perDiskflushExecutors[i] = new JMXEnabledThreadPoolExecutor(1,
+                                                                        StageManager.KEEPALIVE,
+                                                                        TimeUnit.SECONDS,
+                                                                        new LinkedBlockingQueue<Runnable>(),
+                                                                        new NamedThreadFactory("PerDiskMemtableFlushWriter_"+i),
+                                                                        "internal");
+        }
+    }
 
     // post-flush executor is single threaded to provide guarantee that any flush Future on a CF will never return until prior flushes have completed
     private static final ExecutorService postFlushExecutor = new JMXEnabledThreadPoolExecutor(1,
@@ -458,7 +473,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public Directories getDirectories()
     {
-        return directories;
+        // todo, hack since we need to know the data directories when constructing the compaction strategy
+        if (directories != null)
+            return directories;
+        return new Directories(metadata, initialDirectories);
     }
 
     public SSTableMultiWriter createSSTableMultiWriter(Descriptor descriptor, long keyCount, long repairedAt, int sstableLevel, SerializationHeader header, LifecycleTransaction txn)
@@ -1033,11 +1051,74 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
             for (Memtable memtable : memtables)
             {
-                // flush the memtable
-                MoreExecutors.sameThreadExecutor().execute(memtable.flushRunnable());
-                reclaim(memtable);
-            }
+                List<Future<SSTableMultiWriter>> futures = new ArrayList<>();
+                long totalBytesOnDisk = 0;
+                long maxBytesOnDisk = 0;
+                long minBytesOnDisk = Long.MAX_VALUE;
+                List<SSTableReader> sstables = new ArrayList<>();
+                try (LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.FLUSH))
+                {
+                    // flush the memtable
+                    List<Memtable.FlushRunnable> flushRunnables = memtable.flushRunnables(txn);
 
+                    for (int i = 0; i < flushRunnables.size(); i++)
+                        futures.add(perDiskflushExecutors[i].submit(flushRunnables.get(i)));
+
+                    List<SSTableMultiWriter> flushResults = Lists.newArrayList(FBUtilities.waitOnFutures(futures));
+
+                    try
+                    {
+                        Iterator<SSTableMultiWriter> writerIterator = flushResults.iterator();
+                        while (writerIterator.hasNext())
+                        {
+                            SSTableMultiWriter writer = writerIterator.next();
+                            if (writer.getFilePointer() > 0)
+                            {
+                                writer.setOpenResult(true).prepareToCommit();
+                            }
+                            else
+                            {
+                                maybeFail(writer.abort(null));
+                                writerIterator.remove();
+                            }
+                        }
+                    }
+                    catch (Throwable t)
+                    {
+                        for (SSTableMultiWriter writer : flushResults)
+                            t = writer.abort(t);
+                        t = txn.abort(t);
+                        Throwables.propagate(t);
+                    }
+
+                    txn.prepareToCommit();
+
+                    Throwable accumulate = null;
+                    for (SSTableMultiWriter writer : flushResults)
+                        accumulate = writer.commit(accumulate);
+
+                    maybeFail(txn.commit(accumulate));
+
+                    for (SSTableMultiWriter writer : flushResults)
+                    {
+                        Collection<SSTableReader> flushedSSTables = writer.finished();
+                        for (SSTableReader sstable : flushedSSTables)
+                        {
+                            if (sstable != null)
+                            {
+                                sstables.add(sstable);
+                                long size = sstable.bytesOnDisk();
+                                totalBytesOnDisk += size;
+                                maxBytesOnDisk = Math.max(maxBytesOnDisk, size);
+                                minBytesOnDisk = Math.min(minBytesOnDisk, size);
+                            }
+                        }
+                    }
+                }
+                memtable.cfs.replaceFlushed(memtable, sstables);
+                reclaim(memtable);
+                logger.debug("Flushed to {} ({} sstables, {} bytes), biggest {} bytes, smallest {} bytes", sstables, sstables.size(), totalBytesOnDisk, maxBytesOnDisk, minBytesOnDisk);
+            }
             // signal the post-flush we've done our work
             postFlush.latch.countDown();
         }
@@ -1364,6 +1445,11 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public CompactionManager.AllSSTableOpStatus sstablesRewrite(boolean excludeCurrentVersion) throws ExecutionException, InterruptedException
     {
         return CompactionManager.instance.performSSTableRewrite(ColumnFamilyStore.this, excludeCurrentVersion);
+    }
+
+    public CompactionManager.AllSSTableOpStatus rebalanceDisks() throws ExecutionException, InterruptedException
+    {
+        return CompactionManager.instance.rebalanceDisks(this);
     }
 
     public void markObsolete(Collection<SSTableReader> sstables, OperationType compactionType)
@@ -2206,7 +2292,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public int getUnleveledSSTables()
     {
-        return this.compactionStrategyManager.getUnleveledSSTables();
+        return compactionStrategyManager.getUnleveledSSTables();
     }
 
     public int[] getSSTableCountPerLevel()
