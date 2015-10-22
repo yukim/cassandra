@@ -4525,7 +4525,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         List<Token> boundaries = splitter.splitOwnedRanges(dataDirectories.length, localRanges, DatabaseDescriptor.getNumTokens() > 1);
         List<PartitionPosition> diskBoundaries = new ArrayList<>();
         for (int i = 0; i < boundaries.size() - 1; i++)
-            diskBoundaries.add(boundaries.get(i).minKeyBound());
+            diskBoundaries.add(boundaries.get(i).maxKeyBound());
         diskBoundaries.add(partitioner.getMaximumToken().maxKeyBound());
         return diskBoundaries;
     }
