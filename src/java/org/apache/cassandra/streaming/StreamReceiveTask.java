@@ -27,14 +27,17 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
+import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Pair;
-
 import org.apache.cassandra.utils.concurrent.Refs;
 
 /**
@@ -42,6 +45,8 @@ import org.apache.cassandra.utils.concurrent.Refs;
  */
 public class StreamReceiveTask extends StreamTask
 {
+    private static final Logger logger = LoggerFactory.getLogger(StreamReceiveTask.class);
+
     private static final ExecutorService executor = Executors.newCachedThreadPool(new NamedThreadFactory("StreamReceiveTask"));
 
     // number of files to receive
@@ -132,8 +137,15 @@ public class StreamReceiveTask extends StreamTask
                 cfs.addSSTables(readers);
                 cfs.indexManager.maybeBuildSecondaryIndexes(readers, cfs.indexManager.allIndexesNames());
             }
-
-            task.session.taskCompleted(task);
+            catch (Throwable t)
+            {
+                logger.error("Error applying streamed sstable: ", t);
+                JVMStabilityInspector.inspectThrowable(t);
+            }
+            finally
+            {
+                task.session.taskCompleted(task);
+            }
         }
     }
 
