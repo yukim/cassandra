@@ -78,7 +78,8 @@ public class SSTableSimpleWriter extends AbstractSSTableSimpleWriter
         {
             if (currentKey != null)
                 writeRow(currentKey, columnFamily);
-            writer.close();
+            SSTableReader reader = writer.closeAndOpenReader();
+            reader.selfRef().release();
         }
         catch (FSError e)
         {

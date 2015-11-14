@@ -249,7 +249,8 @@ public class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
                         else if (!entry.getKey().equals(b.getFirstInsertedKey()))
                             throw new AssertionError("Empty partition");
                     }
-                    writer.close();
+                    SSTableReader reader = writer.closeAndOpenReader();
+                    reader.selfRef().release();
                 }
             }
             catch (Throwable e)

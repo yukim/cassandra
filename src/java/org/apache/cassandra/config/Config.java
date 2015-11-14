@@ -214,7 +214,7 @@ public class Config
 
     private static boolean isClientMode = false;
 
-    public Integer file_cache_size_in_mb;
+    public Integer file_cache_size_in_mb = Math.min(512, (int) (Runtime.getRuntime().maxMemory() / (4 * 1048576)));
 
     public boolean inter_dc_tcp_nodelay = true;
 
