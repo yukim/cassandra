@@ -48,7 +48,17 @@ public interface IPartitioner
      * Not legal to assign to a node or key.  (But legal to use in range scans.)
      */
     public Token getMinimumToken();
-    public Token getMaximumToken();
+
+    /**
+     * The biggest token for this partitioner, unlike getMinimumToken, this token is actually used and users wanting to
+     * include all tokens need to do getMaximumToken().maxKeyBound()
+     *
+     * Not implemented for the ordered partitioners
+     */
+    default Token getMaximumToken()
+    {
+        throw new UnsupportedOperationException("If you are using a splitting partitioner, getMaximumToken has to be implemented");
+    }
 
     /**
      * @return a Token that can be used to route a given key

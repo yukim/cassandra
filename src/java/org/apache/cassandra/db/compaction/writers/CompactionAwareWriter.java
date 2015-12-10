@@ -151,8 +151,8 @@ public abstract class CompactionAwareWriter extends Transactional.AbstractTransa
         {
             if (locationIndex < 0)
             {
-                Directories.DataDirectory panicLocation = getWriteDirectory(nonExpiredSSTables, cfs.getExpectedCompactedFileSize(nonExpiredSSTables, OperationType.UNKNOWN));
-                switchCompactionLocation(panicLocation);
+                Directories.DataDirectory defaultLocation = getWriteDirectory(nonExpiredSSTables, cfs.getExpectedCompactedFileSize(nonExpiredSSTables, OperationType.UNKNOWN));
+                switchCompactionLocation(defaultLocation);
                 locationIndex = 0;
             }
             return;
@@ -204,6 +204,8 @@ public abstract class CompactionAwareWriter extends Transactional.AbstractTransa
         Directories.DataDirectory d = getDirectories().getDataDirectoryForFile(directory);
         if (d != null)
         {
+            if (d.getAvailableSpace() < estimatedWriteSize)
+                throw new RuntimeException(String.format("Not enough space to write %d bytes to %s (%d bytes available)", estimatedWriteSize, d.location, d.getAvailableSpace()));
             logger.trace("putting compaction results in {}", directory);
             return d;
         }

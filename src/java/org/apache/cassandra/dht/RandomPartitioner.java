@@ -216,6 +216,7 @@ public class RandomPartitioner implements IPartitioner
     {
         return IntegerType.instance;
     }
+
     public AbstractType<?> partitionOrdering()
     {
         return partitionOrdering;

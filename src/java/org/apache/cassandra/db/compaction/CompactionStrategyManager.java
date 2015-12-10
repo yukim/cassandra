@@ -20,6 +20,7 @@ package org.apache.cassandra.db.compaction;
 
 import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 import com.google.common.collect.Iterables;
 import org.apache.cassandra.index.Index;
@@ -159,6 +160,19 @@ public class CompactionStrategyManager implements INotificationConsumer
             return unrepaired.get(index);
     }
 
+    /**
+     * Get the correct compaction strategy for the given sstable. If the first token starts within a disk boundary, we
+     * will add it to that compaction strategy.
+     *
+     * In the case we are upgrading, the first compaction strategy will get most files - we do not care about which disk
+     * the sstable is on currently (unless we don't know the local tokens yet). Once we start compacting we will write out
+     * sstables in the correct locations and give them to the correct compaction strategy instance.
+     *
+     * @param cfs
+     * @param locations
+     * @param sstable
+     * @return
+     */
     public static int getCompactionStrategyIndex(ColumnFamilyStore cfs, Directories locations, SSTableReader sstable)
     {
         if (!cfs.getPartitioner().splitter().isPresent())
@@ -466,8 +480,12 @@ public class CompactionStrategyManager implements INotificationConsumer
 
     public Collection<Collection<SSTableReader>> groupSSTablesForAntiCompaction(Collection<SSTableReader> sstablesToGroup)
     {
-        // todo:
-        return unrepaired.get(0).groupSSTablesForAntiCompaction(sstablesToGroup);
+        Map<Integer, List<SSTableReader>> groups = sstablesToGroup.stream().collect(Collectors.groupingBy((s) -> getCompactionStrategyIndex(cfs, getDirectories(), s)));
+        Collection<Collection<SSTableReader>> anticompactionGroups = new ArrayList<>();
+
+        for (Map.Entry<Integer, List<SSTableReader>> group : groups.entrySet())
+            anticompactionGroups.addAll(unrepaired.get(group.getKey()).groupSSTablesForAntiCompaction(group.getValue()));
+        return anticompactionGroups;
     }
 
     public long getMaxSSTableBytes()

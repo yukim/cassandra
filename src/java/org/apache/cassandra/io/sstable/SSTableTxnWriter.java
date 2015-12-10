@@ -73,16 +73,6 @@ public class SSTableTxnWriter extends Transactional.AbstractTransactional implem
         return txn.abort(writer.abort(accumulate));
     }
 
-    public void setOpenResult(boolean openResult)
-    {
-        writer.setOpenResult(openResult);
-    }
-
-    public Collection<SSTableReader> finished()
-    {
-        return writer.finished();
-    }
-
     protected void doPrepare()
     {
         writer.prepareToCommit();

@@ -245,10 +245,4 @@ public class OrderPreservingPartitioner implements IPartitioner
     {
         return UTF8Type.instance;
     }
-
-    @Override
-    public Token getMaximumToken()
-    {
-        throw new UnsupportedOperationException();
-    }
 }

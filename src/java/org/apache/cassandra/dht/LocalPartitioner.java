@@ -54,12 +54,6 @@ public class LocalPartitioner implements IPartitioner
         return new LocalToken(ByteBufferUtil.EMPTY_BYTE_BUFFER);
     }
 
-    @Override
-    public Token getMaximumToken()
-    {
-        throw new UnsupportedOperationException();
-    }
-
     public LocalToken getToken(ByteBuffer key)
     {
         return new LocalToken(key);

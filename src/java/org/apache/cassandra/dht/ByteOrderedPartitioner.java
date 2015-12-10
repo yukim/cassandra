@@ -305,10 +305,4 @@ public class ByteOrderedPartitioner implements IPartitioner
     {
         return BytesType.instance;
     }
-
-    @Override
-    public Token getMaximumToken()
-    {
-        throw new UnsupportedOperationException();
-    }
 }

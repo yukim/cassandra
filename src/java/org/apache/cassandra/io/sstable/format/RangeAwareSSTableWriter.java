@@ -104,7 +104,7 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     {
         if (currentWriter != null)
             finishedWriters.add(currentWriter);
-
+        currentWriter = null;
         for (SSTableMultiWriter writer : finishedWriters)
         {
             if (writer.getFilePointer() > 0)
@@ -120,7 +120,7 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     {
         if (currentWriter != null)
             finishedWriters.add(currentWriter);
-
+        currentWriter = null;
         for (SSTableMultiWriter writer : finishedWriters)
         {
             if (writer.getFilePointer() > 0)
@@ -140,6 +140,7 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     @Override
     public SSTableMultiWriter setOpenResult(boolean openResult)
     {
+        finishedWriters.forEach((w) -> w.setOpenResult(openResult));
         currentWriter.setOpenResult(openResult);
         return this;
     }
@@ -166,16 +167,20 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     @Override
     public Throwable commit(Throwable accumulate)
     {
-        return currentWriter.commit(accumulate); /* TODO!!! */
+        if (currentWriter != null)
+            finishedWriters.add(currentWriter);
+        currentWriter = null;
+        for (SSTableMultiWriter writer : finishedWriters)
+            accumulate = writer.commit(accumulate);
+        return accumulate;
     }
 
     @Override
     public Throwable abort(Throwable accumulate)
     {
-
         if (currentWriter != null)
             finishedWriters.add(currentWriter);
-
+        currentWriter = null;
         for (SSTableMultiWriter finishedWriter : finishedWriters)
             accumulate = finishedWriter.abort(accumulate);
 
@@ -185,12 +190,18 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     @Override
     public void prepareToCommit()
     {
-        currentWriter.prepareToCommit();
+        if (currentWriter != null)
+            finishedWriters.add(currentWriter);
+        currentWriter = null;
+        finishedWriters.forEach(SSTableMultiWriter::prepareToCommit);
     }
 
     @Override
     public void close()
     {
-        currentWriter.close();
+        if (currentWriter != null)
+            finishedWriters.add(currentWriter);
+        currentWriter = null;
+        finishedWriters.forEach(SSTableMultiWriter::close);
     }
 }

@@ -343,20 +343,26 @@ public class Memtable implements Comparable<Memtable>
         private final boolean isBatchLogTable;
         private final SSTableMultiWriter writer;
 
+        // keeping these to be able to log what we are actually flushing
+        private final PartitionPosition from;
+        private final PartitionPosition to;
+
         FlushRunnable(ReplayPosition context, PartitionPosition from, PartitionPosition to, Directories.DataDirectory flushLocation, LifecycleTransaction txn)
         {
-            this(context, partitions.subMap(from, to), flushLocation, txn);
+            this(context, partitions.subMap(from, to), flushLocation, from, to, txn);
         }
 
         FlushRunnable(ReplayPosition context, LifecycleTransaction txn)
         {
-            this(context, partitions, null, txn);
+            this(context, partitions, null, null, null, txn);
         }
 
-        FlushRunnable(ReplayPosition context, ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> toFlush, Directories.DataDirectory flushLocation, LifecycleTransaction txn)
+        FlushRunnable(ReplayPosition context, ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> toFlush, Directories.DataDirectory flushLocation, PartitionPosition from, PartitionPosition to, LifecycleTransaction txn)
         {
             this.context = context;
             this.toFlush = toFlush;
+            this.from = from;
+            this.to = to;
             long keySize = 0;
             for (PartitionPosition key : toFlush.keySet())
             {
@@ -385,7 +391,7 @@ public class Memtable implements Comparable<Memtable>
 
         private void writeSortedContents(ReplayPosition context)
         {
-            logger.debug("Writing {}", Memtable.this.toString());
+            logger.debug("Writing {}, flushed range = ({}, {}]", Memtable.this.toString(), from, to);
 
             boolean trackContention = logger.isTraceEnabled();
             int heavilyContendedRowCount = 0;

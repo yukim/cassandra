@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import javax.management.openmbean.OpenDataException;
@@ -435,41 +437,47 @@ public class CompactionManager implements CompactionManagerMBean
 
     public AllSSTableOpStatus rebalanceDisks(final ColumnFamilyStore cfs) throws ExecutionException, InterruptedException
     {
-        Keyspace keyspace = cfs.keyspace;
-        final Collection<Range<Token>> r = StorageService.instance.getLocalRanges(keyspace.getName());
+        if (!cfs.getPartitioner().splitter().isPresent())
+        {
+            logger.info("Partitioner does not support splitting");
+            return AllSSTableOpStatus.ABORTED;
+        }
+        final Collection<Range<Token>> r = StorageService.instance.getLocalRanges(cfs.keyspace.getName());
+
         if (r.isEmpty())
         {
             logger.info("Rebalance cannot run before a node has joined the ring");
             return AllSSTableOpStatus.ABORTED;
         }
+
         final List<Range<Token>> localRanges = Range.sort(r);
-
         final Directories.DataDirectory[] locations = cfs.getDirectories().getWriteableLocations();
-
         final List<PartitionPosition> diskBoundaries = StorageService.getDiskBoundaries(localRanges, cfs.getPartitioner(), locations);
-        if (diskBoundaries == null)
-        {
-            logger.info("Partitioner does not support splitting");
-            return AllSSTableOpStatus.ABORTED;
-        }
 
         return parallelAllSSTableOperation(cfs, new OneSSTableOperation()
         {
             @Override
             public Iterable<SSTableReader> filterSSTables(LifecycleTransaction transaction)
             {
-                Iterable<SSTableReader> sstables = new ArrayList<>(transaction.originals());
-                Iterator<SSTableReader> iter = sstables.iterator();
-                while (iter.hasNext())
-                {
-                    SSTableReader sstable = iter.next();
-                    if (inCorrectLocation(sstable))
-                    {
-                        transaction.cancel(sstable);
-                        iter.remove();
-                    }
-                }
-                return sstables;
+                Set<SSTableReader> originals = Sets.newHashSet(transaction.originals());
+                Set<SSTableReader> needsRebalance = originals.stream().filter(s -> !inCorrectLocation(s)).collect(Collectors.toSet());
+                transaction.cancel(Sets.difference(originals, needsRebalance));
+
+                Map<Integer, List<SSTableReader>> groupedByDisk = needsRebalance.stream().collect(Collectors.groupingBy((s) ->
+                        CompactionStrategyManager.getCompactionStrategyIndex(cfs, cfs.getDirectories(), s)));
+
+                int maxSize = 0;
+                for (List<SSTableReader> diskSSTables : groupedByDisk.values())
+                    maxSize = Math.max(maxSize, diskSSTables.size());
+
+                List<SSTableReader> mixedSSTables = new ArrayList<>();
+
+                for (int i = 0; i < maxSize; i++)
+                    for (List<SSTableReader> diskSSTables : groupedByDisk.values())
+                        if (i < diskSSTables.size())
+                            mixedSSTables.add(diskSSTables.get(i));
+
+                return mixedSSTables;
             }
 
             private boolean inCorrectLocation(SSTableReader sstable)
@@ -489,7 +497,7 @@ public class CompactionManager implements CompactionManagerMBean
             @Override
             public void execute(LifecycleTransaction txn) throws IOException
             {
-                logger.info("Rebalancing {}", txn.originals());
+                logger.debug("Rebalancing {}", txn.originals());
                 AbstractCompactionTask task = cfs.getCompactionStrategyManager().getCompactionTask(txn, NO_GC, Long.MAX_VALUE);
                 task.setUserDefined(true);
                 task.setCompactionType(OperationType.REBALANCE);
