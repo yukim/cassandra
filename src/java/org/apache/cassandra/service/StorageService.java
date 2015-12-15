@@ -2626,12 +2626,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
-    public int rebalanceDisks(String keyspaceName, String ... columnFamilies) throws IOException, ExecutionException, InterruptedException
+    public int relocateSSTables(String keyspaceName, String ... columnFamilies) throws IOException, ExecutionException, InterruptedException
     {
         CompactionManager.AllSSTableOpStatus status = CompactionManager.AllSSTableOpStatus.SUCCESSFUL;
         for (ColumnFamilyStore cfs : getValidColumnFamilies(false, false, keyspaceName, columnFamilies))
         {
-            CompactionManager.AllSSTableOpStatus oneStatus = cfs.rebalanceDisks();
+            CompactionManager.AllSSTableOpStatus oneStatus = cfs.relocateSSTables();
             if (oneStatus != CompactionManager.AllSSTableOpStatus.SUCCESSFUL)
                 status = oneStatus;
         }

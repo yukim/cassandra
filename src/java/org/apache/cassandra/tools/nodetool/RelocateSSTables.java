@@ -25,8 +25,8 @@ import io.airlift.command.Command;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool;
 
-@Command(name = "rebalancedisks", description = "Rebalances data over disks")
-public class RebalanceDisks extends NodeTool.NodeToolCmd
+@Command(name = "relocatesstables", description = "Relocates sstables to the correct disk")
+public class RelocateSSTables extends NodeTool.NodeToolCmd
 {
     @Arguments(usage = "<keyspace> <table>", description = "The keyspace and table name")
     private List<String> args = new ArrayList<>();
@@ -39,11 +39,11 @@ public class RebalanceDisks extends NodeTool.NodeToolCmd
         try
         {
             for (String keyspace : keyspaces)
-                probe.rebalanceDisks(keyspace, cfnames);
+                probe.relocateSSTables(keyspace, cfnames);
         }
         catch (Exception e)
         {
-            throw new RuntimeException("Got error while rebalancing", e);
+            throw new RuntimeException("Got error while relocating", e);
         }
     }
 }

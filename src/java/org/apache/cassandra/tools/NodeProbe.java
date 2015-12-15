@@ -299,9 +299,9 @@ public class NodeProbe implements AutoCloseable
         ssProxy.forceKeyspaceCompaction(splitOutput, keyspaceName, tableNames);
     }
 
-    public void rebalanceDisks(String keyspace, String[] cfnames) throws IOException, ExecutionException, InterruptedException
+    public void relocateSSTables(String keyspace, String[] cfnames) throws IOException, ExecutionException, InterruptedException
     {
-        ssProxy.rebalanceDisks(keyspace, cfnames);
+        ssProxy.relocateSSTables(keyspace, cfnames);
     }
 
     public void forceKeyspaceFlush(String keyspaceName, String... tableNames) throws IOException, ExecutionException, InterruptedException

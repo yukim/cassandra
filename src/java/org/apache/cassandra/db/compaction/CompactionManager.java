@@ -435,7 +435,7 @@ public class CompactionManager implements CompactionManagerMBean
         }, OperationType.CLEANUP);
     }
 
-    public AllSSTableOpStatus rebalanceDisks(final ColumnFamilyStore cfs) throws ExecutionException, InterruptedException
+    public AllSSTableOpStatus relocateSSTables(final ColumnFamilyStore cfs) throws ExecutionException, InterruptedException
     {
         if (!cfs.getPartitioner().splitter().isPresent())
         {
@@ -446,7 +446,7 @@ public class CompactionManager implements CompactionManagerMBean
 
         if (r.isEmpty())
         {
-            logger.info("Rebalance cannot run before a node has joined the ring");
+            logger.info("Relocate cannot run before a node has joined the ring");
             return AllSSTableOpStatus.ABORTED;
         }
 
@@ -460,10 +460,10 @@ public class CompactionManager implements CompactionManagerMBean
             public Iterable<SSTableReader> filterSSTables(LifecycleTransaction transaction)
             {
                 Set<SSTableReader> originals = Sets.newHashSet(transaction.originals());
-                Set<SSTableReader> needsRebalance = originals.stream().filter(s -> !inCorrectLocation(s)).collect(Collectors.toSet());
-                transaction.cancel(Sets.difference(originals, needsRebalance));
+                Set<SSTableReader> needsRelocation = originals.stream().filter(s -> !inCorrectLocation(s)).collect(Collectors.toSet());
+                transaction.cancel(Sets.difference(originals, needsRelocation));
 
-                Map<Integer, List<SSTableReader>> groupedByDisk = needsRebalance.stream().collect(Collectors.groupingBy((s) ->
+                Map<Integer, List<SSTableReader>> groupedByDisk = needsRelocation.stream().collect(Collectors.groupingBy((s) ->
                         CompactionStrategyManager.getCompactionStrategyIndex(cfs, cfs.getDirectories(), s)));
 
                 int maxSize = 0;
@@ -497,13 +497,13 @@ public class CompactionManager implements CompactionManagerMBean
             @Override
             public void execute(LifecycleTransaction txn) throws IOException
             {
-                logger.debug("Rebalancing {}", txn.originals());
+                logger.debug("Relocating {}", txn.originals());
                 AbstractCompactionTask task = cfs.getCompactionStrategyManager().getCompactionTask(txn, NO_GC, Long.MAX_VALUE);
                 task.setUserDefined(true);
-                task.setCompactionType(OperationType.REBALANCE);
+                task.setCompactionType(OperationType.RELOCATE_SSTABLES);
                 task.execute(metrics);
             }
-        }, OperationType.REBALANCE);
+        }, OperationType.RELOCATE_SSTABLES);
     }
 
     public ListenableFuture<?> submitAntiCompaction(final ColumnFamilyStore cfs,

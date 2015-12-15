@@ -135,7 +135,7 @@ public class NodeTool
                 EnableHintsForDC.class,
                 FailureDetectorInfo.class,
                 RefreshSizeEstimates.class,
-                RebalanceDisks.class
+                RelocateSSTables.class
         );
 
         Cli.CliBuilder<Runnable> builder = Cli.builder("nodetool");
