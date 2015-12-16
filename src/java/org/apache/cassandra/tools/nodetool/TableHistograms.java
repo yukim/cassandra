@@ -79,8 +79,9 @@ public class TableHistograms extends NodeToolCmd
         }
         else
         {
-            long[] partitionSizeBucketOffsets = new EstimatedHistogram(estimatedPartitionSize.length).getBucketOffsets();
-            long[] columnCountBucketOffsets = new EstimatedHistogram(estimatedColumnCount.length).getBucketOffsets();
+            // bucket offsets is one element less than actual bucket values
+            long[] partitionSizeBucketOffsets = new EstimatedHistogram(estimatedPartitionSize.length - 1).getBucketOffsets();
+            long[] columnCountBucketOffsets = new EstimatedHistogram(estimatedColumnCount.length - 1).getBucketOffsets();
             EstimatedHistogram partitionSizeHist = new EstimatedHistogram(partitionSizeBucketOffsets, estimatedPartitionSize);
             EstimatedHistogram columnCountHist = new EstimatedHistogram(columnCountBucketOffsets, estimatedColumnCount);
 
