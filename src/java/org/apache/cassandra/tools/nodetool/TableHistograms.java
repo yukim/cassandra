@@ -79,15 +79,12 @@ public class TableHistograms extends NodeToolCmd
         }
         else
         {
-            // bucket offsets is one element less than actual bucket values
-            long[] partitionSizeBucketOffsets = new EstimatedHistogram(estimatedPartitionSize.length - 1).getBucketOffsets();
-            long[] columnCountBucketOffsets = new EstimatedHistogram(estimatedColumnCount.length - 1).getBucketOffsets();
-            EstimatedHistogram partitionSizeHist = new EstimatedHistogram(partitionSizeBucketOffsets, estimatedPartitionSize);
-            EstimatedHistogram columnCountHist = new EstimatedHistogram(columnCountBucketOffsets, estimatedColumnCount);
+            EstimatedHistogram partitionSizeHist = new EstimatedHistogram(estimatedPartitionSize);
+            EstimatedHistogram columnCountHist = new EstimatedHistogram(estimatedColumnCount);
 
             if (partitionSizeHist.isOverflowed())
             {
-                System.err.println(String.format("Row sizes are larger than %s, unable to calculate percentiles", partitionSizeBucketOffsets[partitionSizeBucketOffsets.length - 1]));
+                System.err.println(String.format("Row sizes are larger than %s, unable to calculate percentiles", partitionSizeHist.getLargestBucketOffset()));
                 for (int i = 0; i < offsetPercentiles.length; i++)
                         estimatedRowSizePercentiles[i] = Double.NaN;
             }
@@ -99,7 +96,7 @@ public class TableHistograms extends NodeToolCmd
 
             if (columnCountHist.isOverflowed())
             {
-                System.err.println(String.format("Column counts are larger than %s, unable to calculate percentiles", columnCountBucketOffsets[columnCountBucketOffsets.length - 1]));
+                System.err.println(String.format("Column counts are larger than %s, unable to calculate percentiles", columnCountHist.getLargestBucketOffset()));
                 for (int i = 0; i < estimatedColumnCountPercentiles.length; i++)
                     estimatedColumnCountPercentiles[i] = Double.NaN;
             }
