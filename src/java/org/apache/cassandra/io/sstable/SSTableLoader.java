@@ -96,6 +96,12 @@ public class SSTableLoader implements StreamEventHandler
                                               return false;
                                           }
 
+                                          if (!desc.version.storeRows())
+                                          {
+                                              outputHandler.output(String.format("Skipping file %s because SSTable created before 3.0.0 cannot be streamed", name));
+                                              return false;
+                                          }
+
                                           CFMetaData metadata = client.getTableMetadata(desc.cfname);
                                           if (metadata == null)
                                           {
