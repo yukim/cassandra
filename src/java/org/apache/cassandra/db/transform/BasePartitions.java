@@ -75,6 +75,9 @@ implements BasePartitionIterator<R>
                     for (int i = 0 ; next != null & i < len ; i++)
                         next = fs[i].applyToPartition(next);
 
+                    if (stop.isSignalled)
+                        return false;
+
                     if (next != null)
                     {
                         this.next = next;
