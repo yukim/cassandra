@@ -32,7 +32,7 @@ import org.apache.commons.lang3.StringUtils;
  */
 public class CassandraVersion implements Comparable<CassandraVersion>
 {
-    private static final String VERSION_REGEXP = "(\\d+)\\.(\\d+)\\.(\\d+)(\\-[.\\w]+)?([.+][.\\w]+)?";
+    private static final String VERSION_REGEXP = "(\\d+)\\.(\\d+)(?:\\.(\\d+))?(\\-[.\\w]+)?([.+][.\\w]+)?";
     private static final Pattern pattern = Pattern.compile(VERSION_REGEXP);
     private static final Pattern SNAPSHOT = Pattern.compile("-SNAPSHOT");
 
@@ -70,7 +70,7 @@ public class CassandraVersion implements Comparable<CassandraVersion>
         {
             this.major = Integer.parseInt(matcher.group(1));
             this.minor = Integer.parseInt(matcher.group(2));
-            this.patch = Integer.parseInt(matcher.group(3));
+            this.patch = matcher.group(3) != null ? Integer.parseInt(matcher.group(3)) : 0;
 
             String pr = matcher.group(4);
             String bld = matcher.group(5);
@@ -80,7 +80,7 @@ public class CassandraVersion implements Comparable<CassandraVersion>
         }
         catch (NumberFormatException e)
         {
-            throw new IllegalArgumentException("Invalid version value: " + version);
+            throw new IllegalArgumentException("Invalid version value: " + version, e);
         }
     }
 
