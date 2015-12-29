@@ -106,7 +106,7 @@ public class StreamReader
             {
                 writePartition(deserializer, writer);
                 // TODO move this to BytesReadTracker
-                session.progress(writer.getFilename(), ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
+                session.progress(writer.getWriterId(), writer.getFilename(), ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
             }
             return writer;
         }

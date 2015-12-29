@@ -76,7 +76,8 @@ public class CompressedStreamWriter extends StreamWriter
                     long lastWrite = out.applyToChannel((wbc) -> fc.transferTo(section.left + bytesTransferredFinal, toTransfer, wbc));
                     bytesTransferred += lastWrite;
                     progress += lastWrite;
-                    session.progress(sstable.descriptor.filenameFor(Component.DATA), ProgressInfo.Direction.OUT, progress, totalSize);
+                    String filename = sstable.descriptor.filenameFor(Component.DATA);
+                    session.progress(filename, filename, ProgressInfo.Direction.OUT, progress, totalSize);
                 }
             }
         }
