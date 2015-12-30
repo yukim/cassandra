@@ -32,7 +32,11 @@ import org.apache.commons.lang3.StringUtils;
  */
 public class CassandraVersion implements Comparable<CassandraVersion>
 {
-    private static final String VERSION_REGEXP = "(\\d+)\\.(\\d+)(?:\\.(\\d+))?(\\-[.\\w]+)?([.+][.\\w]+)?";
+    /**
+     * note: 3rd group matches to words but only allows number and checked after regexp test.
+     * this is because 3rd and the last can be identical.
+     **/
+    private static final String VERSION_REGEXP = "(\\d+)\\.(\\d+)(?:\\.(\\w+))?(\\-[.\\w]+)?([.+][.\\w]+)?";
     private static final Pattern pattern = Pattern.compile(VERSION_REGEXP);
     private static final Pattern SNAPSHOT = Pattern.compile("-SNAPSHOT");
 

@@ -142,7 +142,11 @@ public class CassandraVersionTest
         assertTrue(prev.compareTo(next) < 0);
 
         prev = next;
-        next = new CassandraVersion("3.2-SNAPSHOT");
+        next = new CassandraVersion("3.1.1");
+        assertTrue(prev.compareTo(next) < 0);
+
+        prev = next;
+        next = new CassandraVersion("3.2-rc1-SNAPSHOT");
         assertTrue(prev.compareTo(next) < 0);
 
         prev = next;
