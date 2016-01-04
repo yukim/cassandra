@@ -47,11 +47,6 @@ public interface SSTableMultiWriter extends Transactional
     long getFilePointer();
     UUID getCfId();
 
-    default String getWriterId()
-    {
-        return getFilename();
-    }
-
     static void abortOrDie(SSTableMultiWriter writer)
     {
         Throwables.maybeFail(writer.abort(null));

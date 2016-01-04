@@ -102,8 +102,7 @@ public class StreamWriter
                     long lastBytesRead = write(file, validator, readOffset, length, bytesRead);
                     bytesRead += lastBytesRead;
                     progress += (lastBytesRead - readOffset);
-                    String filename = sstable.descriptor.filenameFor(Component.DATA);
-                    session.progress(filename, filename, ProgressInfo.Direction.OUT, progress, totalSize);
+                    session.progress(sstable.descriptor.filenameFor(Component.DATA), ProgressInfo.Direction.OUT, progress, totalSize);
                     readOffset = 0;
                 }
 

@@ -49,7 +49,6 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     private final List<SSTableMultiWriter> finishedWriters = new ArrayList<>();
     private final List<SSTableReader> finishedReaders = new ArrayList<>();
     private SSTableMultiWriter currentWriter = null;
-    private final UUID uniqueId = UUID.randomUUID();
 
     public RangeAwareSSTableWriter(ColumnFamilyStore cfs, long estimatedKeys, long repairedAt, SSTableFormat.Type format, int sstableLevel, long totalSize, LifecycleTransaction txn, SerializationHeader.Component header) throws IOException
     {
@@ -163,12 +162,6 @@ public class RangeAwareSSTableWriter implements SSTableMultiWriter
     public UUID getCfId()
     {
         return currentWriter.getCfId();
-    }
-
-    @Override
-    public String getWriterId()
-    {
-        return uniqueId.toString();
     }
 
     @Override

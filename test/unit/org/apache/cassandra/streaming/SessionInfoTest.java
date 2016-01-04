@@ -56,15 +56,14 @@ public class SessionInfoTest
         assert info.getTotalFilesReceived() == 0;
         assert info.getTotalFilesSent() == 0;
 
-        UUID id = UUID.randomUUID();
         // receive in progress
-        info.updateProgress(new ProgressInfo(id.toString(), local, 0, "test.txt", ProgressInfo.Direction.IN, 50, 100));
+        info.updateProgress(new ProgressInfo(local, 0, "test.txt", ProgressInfo.Direction.IN, 50, 100));
         // still in progress, but not completed yet
         assert info.getTotalSizeReceived() == 50;
         assert info.getTotalSizeSent() == 0;
         assert info.getTotalFilesReceived() == 0;
         assert info.getTotalFilesSent() == 0;
-        info.updateProgress(new ProgressInfo(id.toString(), local, 0, "test.txt", ProgressInfo.Direction.IN, 100, 100));
+        info.updateProgress(new ProgressInfo(local, 0, "test.txt", ProgressInfo.Direction.IN, 100, 100));
         // 1 file should be completed
         assert info.getTotalSizeReceived() == 100;
         assert info.getTotalSizeSent() == 0;

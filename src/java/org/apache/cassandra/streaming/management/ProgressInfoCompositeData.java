@@ -36,24 +36,21 @@ public class ProgressInfoCompositeData
                                                             "fileName",
                                                             "direction",
                                                             "currentBytes",
-                                                            "totalBytes",
-                                                            "id"};
+                                                            "totalBytes"};
     private static final String[] ITEM_DESCS = new String[]{"String representation of Plan ID",
                                                             "Session peer",
                                                             "Index of session",
                                                             "Name of the file",
                                                             "Direction('IN' or 'OUT')",
                                                             "Current bytes transferred",
-                                                            "Total bytes to transfer",
-                                                            "Identifier"};
+                                                            "Total bytes to transfer"};
     private static final OpenType<?>[] ITEM_TYPES = new OpenType[]{SimpleType.STRING,
                                                                    SimpleType.STRING,
                                                                    SimpleType.INTEGER,
                                                                    SimpleType.STRING,
                                                                    SimpleType.STRING,
                                                                    SimpleType.LONG,
-                                                                   SimpleType.LONG,
-                                                                   SimpleType.STRING};
+                                                                   SimpleType.LONG};
 
     public static final CompositeType COMPOSITE_TYPE;
     static  {
@@ -81,7 +78,6 @@ public class ProgressInfoCompositeData
         valueMap.put(ITEM_NAMES[4], progressInfo.direction.name());
         valueMap.put(ITEM_NAMES[5], progressInfo.currentBytes);
         valueMap.put(ITEM_NAMES[6], progressInfo.totalBytes);
-        valueMap.put(ITEM_NAMES[7], progressInfo.id);
         try
         {
             return new CompositeDataSupport(COMPOSITE_TYPE, valueMap);
@@ -97,8 +93,7 @@ public class ProgressInfoCompositeData
         Object[] values = cd.getAll(ITEM_NAMES);
         try
         {
-            return new ProgressInfo((String) values[7],
-                                    InetAddress.getByName((String) values[1]),
+            return new ProgressInfo(InetAddress.getByName((String) values[1]),
                                     (int) values[2],
                                     (String) values[3],
                                     ProgressInfo.Direction.valueOf((String)values[4]),

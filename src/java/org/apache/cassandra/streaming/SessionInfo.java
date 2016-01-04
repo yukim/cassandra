@@ -78,7 +78,7 @@ public final class SessionInfo implements Serializable
 
         Map<String, ProgressInfo> currentFiles = newProgress.direction == ProgressInfo.Direction.IN
                                                     ? receivingFiles : sendingFiles;
-        currentFiles.put(newProgress.id, newProgress);
+        currentFiles.put(newProgress.fileName, newProgress);
     }
 
     public Collection<ProgressInfo> getReceivingFiles()
