@@ -27,10 +27,10 @@ import java.util.List;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
 
-@Command(name = "compact", description = "Force a (major) compaction on one or more tables")
+@Command(name = "compact", description = "Force a (major) compaction on one or more tables or user-defined compaction on given SSTables")
 public class Compact extends NodeToolCmd
 {
-    @Arguments(usage = "[<keyspace> <tables>...]", description = "The keyspace followed by one or many tables")
+    @Arguments(usage = "[<keyspace> <tables>...] or <SSTable file>...", description = "The keyspace followed by one or many tables or list of SSTable data files when using --user-defined")
     private List<String> args = new ArrayList<>();
 
     @Option(title = "split_output", name = {"-s", "--split-output"}, description = "Use -s to not create a single big file")
@@ -42,18 +42,15 @@ public class Compact extends NodeToolCmd
     @Override
     public void execute(NodeProbe probe)
     {
-        System.out.println("args: " + args);
-        System.out.println("datafiles: " + userDefined);
-
-        if(splitOutput && userDefined)
+        if (splitOutput && userDefined)
         {
             throw new RuntimeException("Invalid option combination: User defined compaction can not be split");
         }
-        else if(userDefined)
+        else if (userDefined)
         {
             try
             {
-                String userDefinedFiles = parseUserDefinedFiles(args);
+                String userDefinedFiles = String.join(",", args);
                 probe.forceUserDefinedCompaction(userDefinedFiles);
             } catch (Exception e) {
                 throw new RuntimeException("Error occurred during user defined compaction", e);
@@ -74,17 +71,5 @@ public class Compact extends NodeToolCmd
                 throw new RuntimeException("Error occurred during compaction", e);
             }
         }
-    }
-
-    private String parseUserDefinedFiles(List<String> args)
-    {
-        StringBuilder sb = new StringBuilder();
-        String delim = "";
-        for(String s : args)
-        {
-            sb.append(delim).append(s);
-            delim = ",";
-        }
-        return sb.toString();
     }
 }
