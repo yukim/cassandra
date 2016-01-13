@@ -82,14 +82,13 @@ public class BigFormat implements SSTableFormat
         @Override
         public SSTableWriter open(Descriptor descriptor,
                                   long keyCount,
-                                  long repairedAt,
                                   CFMetaData metadata,
                                   MetadataCollector metadataCollector,
                                   SerializationHeader header,
                                   Collection<SSTableFlushObserver> observers,
                                   LifecycleTransaction txn)
         {
-            return new BigTableWriter(descriptor, keyCount, repairedAt, metadata, metadataCollector, header, observers, txn);
+            return new BigTableWriter(descriptor, keyCount, metadata, metadataCollector, header, observers, txn);
         }
     }
 

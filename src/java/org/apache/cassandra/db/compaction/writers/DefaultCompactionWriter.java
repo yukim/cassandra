@@ -71,9 +71,8 @@ public class DefaultCompactionWriter extends CompactionAwareWriter
         @SuppressWarnings("resource")
         SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getSSTablePath(getDirectories().getLocationForDisk(directory))),
                                                     estimatedTotalKeys,
-                                                    minRepairedAt,
                                                     cfs.metadata,
-                                                    new MetadataCollector(txn.originals(), cfs.metadata.comparator, sstableLevel),
+                                                    new MetadataCollector(txn.originals(), cfs.metadata.comparator, sstableLevel).repairedAt(minRepairedAt),
                                                     SerializationHeader.make(cfs.metadata, nonExpiredSSTables),
                                                     cfs.indexManager.listIndexes(),
                                                     txn);

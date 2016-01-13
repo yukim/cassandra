@@ -107,9 +107,8 @@ public class SplittingSizeTieredCompactionWriter extends CompactionAwareWriter
         @SuppressWarnings("resource")
         SSTableWriter writer = SSTableWriter.create(Descriptor.fromFilename(cfs.getSSTablePath(getDirectories().getLocationForDisk(location))),
                                                     currentPartitionsToWrite,
-                                                    minRepairedAt,
                                                     cfs.metadata,
-                                                    new MetadataCollector(allSSTables, cfs.metadata.comparator, 0),
+                                                    new MetadataCollector(allSSTables, cfs.metadata.comparator, 0).repairedAt(minRepairedAt),
                                                     SerializationHeader.make(cfs.metadata, nonExpiredSSTables),
                                                     cfs.indexManager.listIndexes(),
                                                     txn);

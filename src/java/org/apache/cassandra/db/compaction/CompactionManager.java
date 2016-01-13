@@ -1159,9 +1159,8 @@ public class CompactionManager implements CompactionManagerMBean
         }
         return SSTableWriter.create(Descriptor.fromFilename(cfs.getSSTablePath(compactionFileLocation)),
                                     (long) expectedBloomFilterSize,
-                                    repairedAt,
                                     cfs.metadata,
-                                    new MetadataCollector(sstables, cfs.metadata.comparator, minLevel),
+                                    new MetadataCollector(sstables, cfs.metadata.comparator, minLevel).repairedAt(repairedAt),
                                     SerializationHeader.make(cfs.metadata, sstables),
                                     cfs.indexManager.listIndexes(),
                                     txn);

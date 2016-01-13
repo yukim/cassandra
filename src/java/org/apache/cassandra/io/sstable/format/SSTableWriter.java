@@ -52,7 +52,6 @@ import org.apache.cassandra.utils.concurrent.Transactional;
  */
 public abstract class SSTableWriter extends SSTable implements Transactional
 {
-    protected long repairedAt;
     protected long maxDataAge = -1;
     protected final long keyCount;
     protected final MetadataCollector metadataCollector;
@@ -73,7 +72,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
 
     protected SSTableWriter(Descriptor descriptor,
                             long keyCount,
-                            long repairedAt,
                             CFMetaData metadata,
                             MetadataCollector metadataCollector,
                             SerializationHeader header,
@@ -81,7 +79,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     {
         super(descriptor, components(metadata), metadata);
         this.keyCount = keyCount;
-        this.repairedAt = repairedAt;
         this.metadataCollector = metadataCollector;
         this.header = header != null ? header : SerializationHeader.makeWithoutStats(metadata); //null header indicates streaming from pre-3.0 sstable
         this.rowIndexEntrySerializer = descriptor.version.getSSTableFormat().getIndexSerializer(metadata, descriptor.version, header);
@@ -89,8 +86,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     }
 
     public static SSTableWriter create(Descriptor descriptor,
-                                       Long keyCount,
-                                       Long repairedAt,
+                                       long keyCount,
                                        CFMetaData metadata,
                                        MetadataCollector metadataCollector,
                                        SerializationHeader header,
@@ -98,7 +94,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
                                        LifecycleTransaction txn)
     {
         Factory writerFactory = descriptor.getFormat().getWriterFactory();
-        return writerFactory.open(descriptor, keyCount, repairedAt, metadata, metadataCollector, header, observers(descriptor, indexes, txn.opType()), txn);
+        return writerFactory.open(descriptor, keyCount, metadata, metadataCollector, header, observers(descriptor, indexes, txn.opType()), txn);
     }
 
     public static SSTableWriter create(Descriptor descriptor,
@@ -122,8 +118,8 @@ public abstract class SSTableWriter extends SSTable implements Transactional
                                        Collection<Index> indexes,
                                        LifecycleTransaction txn)
     {
-        MetadataCollector collector = new MetadataCollector(metadata.comparator).sstableLevel(sstableLevel);
-        return create(descriptor, keyCount, repairedAt, metadata, collector, header, indexes, txn);
+        MetadataCollector collector = new MetadataCollector(metadata.comparator).sstableLevel(sstableLevel).repairedAt(repairedAt);
+        return create(descriptor, keyCount, metadata, collector, header, indexes, txn);
     }
 
     public static SSTableWriter create(String filename,
@@ -151,7 +147,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
 
     private static Set<Component> components(CFMetaData metadata)
     {
-        Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,
+        Set<Component> components = new HashSet<>(Arrays.asList(Component.DATA,
                 Component.PRIMARY_INDEX,
                 Component.STATS,
                 Component.SUMMARY,
@@ -216,8 +212,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
 
     public SSTableWriter setRepairedAt(long repairedAt)
     {
-        if (repairedAt > 0)
-            this.repairedAt = repairedAt;
+        metadataCollector.repairedAt(repairedAt);
         return this;
     }
 
@@ -246,8 +241,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
 
     public SSTableReader finish(long repairedAt, long maxDataAge, boolean openResult)
     {
-        if (repairedAt > 0)
-            this.repairedAt = repairedAt;
+        metadataCollector.repairedAt(repairedAt);
         this.maxDataAge = maxDataAge;
         return finish(openResult);
     }
@@ -306,7 +300,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     {
         return metadataCollector.finalizeMetadata(getPartitioner().getClass().getCanonicalName(),
                                                   metadata.params.bloomFilterFpChance,
-                                                  repairedAt,
                                                   header);
     }
 
@@ -334,7 +327,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     {
         public abstract SSTableWriter open(Descriptor descriptor,
                                            long keyCount,
-                                           long repairedAt,
                                            CFMetaData metadata,
                                            MetadataCollector metadataCollector,
                                            SerializationHeader header,

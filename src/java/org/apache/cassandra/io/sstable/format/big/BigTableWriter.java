@@ -61,14 +61,13 @@ public class BigTableWriter extends SSTableWriter
 
     public BigTableWriter(Descriptor descriptor, 
                           Long keyCount, 
-                          Long repairedAt, 
-                          CFMetaData metadata, 
+                          CFMetaData metadata,
                           MetadataCollector metadataCollector, 
                           SerializationHeader header,
                           Collection<SSTableFlushObserver> observers,
                           LifecycleTransaction txn)
     {
-        super(descriptor, keyCount, repairedAt, metadata, metadataCollector, header, observers);
+        super(descriptor, keyCount, metadata, metadataCollector, header, observers);
         txn.trackNew(this); // must track before any files are created
 
         if (compression)

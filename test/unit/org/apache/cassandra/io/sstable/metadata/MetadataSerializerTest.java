@@ -55,7 +55,7 @@ public class MetadataSerializerTest
 
         String partitioner = RandomPartitioner.class.getCanonicalName();
         double bfFpChance = 0.1;
-        Map<MetadataType, MetadataComponent> originalMetadata = collector.finalizeMetadata(partitioner, bfFpChance, 0, SerializationHeader.make(cfm, Collections.EMPTY_LIST));
+        Map<MetadataType, MetadataComponent> originalMetadata = collector.finalizeMetadata(partitioner, bfFpChance, SerializationHeader.make(cfm, Collections.EMPTY_LIST));
 
         MetadataSerializer serializer = new MetadataSerializer();
         // Serialize to tmp file

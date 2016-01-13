@@ -18,15 +18,11 @@
 package org.apache.cassandra.io.sstable.metadata;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
-import com.google.common.collect.Maps;
+import java.util.*;
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
+
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -98,6 +94,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
     protected boolean hasLegacyCounterShards = false;
     protected long totalColumnsSet;
     protected long totalRows;
+    protected long repairedAt;
 
     /**
      * Default cardinality estimation method is to use HyperLogLog++.
@@ -219,6 +216,18 @@ public class MetadataCollector implements PartitionStatisticsCollector
         return this;
     }
 
+    public long repairedAt()
+    {
+        return repairedAt;
+    }
+
+    public MetadataCollector repairedAt(long repairedAt)
+    {
+        if (repairedAt > 0)
+            this.repairedAt = repairedAt;
+        return this;
+    }
+
     public MetadataCollector updateClusteringValues(ClusteringPrefix clustering)
     {
         int size = clustering.size();
@@ -268,9 +277,9 @@ public class MetadataCollector implements PartitionStatisticsCollector
         this.hasLegacyCounterShards = this.hasLegacyCounterShards || hasLegacyCounterShards;
     }
 
-    public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, long repairedAt, SerializationHeader header)
+    public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, SerializationHeader header)
     {
-        Map<MetadataType, MetadataComponent> components = Maps.newHashMap();
+        Map<MetadataType, MetadataComponent> components = new HashMap<>();
         components.put(MetadataType.VALIDATION, new ValidationMetadata(partitioner, bloomFilterFPChance));
         components.put(MetadataType.STATS, new StatsMetadata(estimatedPartitionSize,
                                                              estimatedCellPerPartitionCount,
