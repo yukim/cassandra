@@ -25,13 +25,13 @@ import org.apache.cassandra.io.compress.BufferType;
 public class ChecksummedSequentialWriter extends SequentialWriter
 {
     private final SequentialWriter crcWriter;
-    private final DataIntegrityMetadata.ChecksumWriter crcMetadata;
+    private final ChecksumWriter crcMetadata;
 
     public ChecksummedSequentialWriter(File file, int bufferSize, File crcPath)
     {
         super(file, bufferSize, BufferType.ON_HEAP);
         crcWriter = new SequentialWriter(crcPath, 8 * 1024, BufferType.ON_HEAP);
-        crcMetadata = new DataIntegrityMetadata.ChecksumWriter(crcWriter);
+        crcMetadata = new ChecksumWriter(crcWriter);
         crcMetadata.writeChunkSize(buffer.capacity());
     }
 
@@ -65,7 +65,7 @@ public class ChecksummedSequentialWriter extends SequentialWriter
             syncInternal();
             if (descriptor != null)
                 crcMetadata.writeFullChecksum(descriptor);
-            crcWriter.setDescriptor(descriptor).prepareToCommit();
+            crcWriter.prepareToCommit();
         }
     }
 
