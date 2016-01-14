@@ -130,7 +130,7 @@ public class BufferedRandomAccessFileTest
     public void testReadAndWriteOnCapacity() throws IOException
     {
         File tmpFile = File.createTempFile("readtest", "bin");
-        SequentialWriter w = SequentialWriter.open(tmpFile);
+        SequentialWriter w = new SequentialWriter(tmpFile);
 
         // Fully write the file and sync..
         byte[] in = generateByteArray(RandomAccessReader.DEFAULT_BUFFER_SIZE);
@@ -156,7 +156,7 @@ public class BufferedRandomAccessFileTest
     public void testLength() throws IOException
     {
         File tmpFile = File.createTempFile("lengthtest", "bin");
-        SequentialWriter w = SequentialWriter.open(tmpFile);
+        SequentialWriter w = new SequentialWriter(tmpFile);
         assertEquals(0, w.length());
 
         // write a chunk smaller then our buffer, so will not be flushed
@@ -561,7 +561,7 @@ public class BufferedRandomAccessFileTest
     public void testSetNegativeLength() throws IOException, IllegalArgumentException
     {
         File tmpFile = File.createTempFile("set_negative_length", "bin");
-        try (SequentialWriter file = SequentialWriter.open(tmpFile))
+        try (SequentialWriter file = new SequentialWriter(tmpFile))
         {
             file.truncate(-8L);
         }
@@ -572,7 +572,7 @@ public class BufferedRandomAccessFileTest
         File tempFile = File.createTempFile(name, null);
         tempFile.deleteOnExit();
 
-        return SequentialWriter.open(tempFile);
+        return new SequentialWriter(tempFile);
     }
 
     private File writeTemporaryFile(byte[] data) throws IOException

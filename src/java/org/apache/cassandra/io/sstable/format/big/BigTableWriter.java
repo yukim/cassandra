@@ -17,37 +17,34 @@
  */
 package org.apache.cassandra.io.sstable.format.big;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
+import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.transform.Transformation;
+import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.compress.CompressedSequentialWriter;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.format.SSTableFlushObserver;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.compress.CompressedSequentialWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
 import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.*;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.FilterFactory;
-import org.apache.cassandra.utils.IFilter;
+import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.concurrent.Transactional;
-
-import org.apache.cassandra.utils.SyncUtil;
 
 public class BigTableWriter extends SSTableWriter
 {
@@ -59,10 +56,15 @@ public class BigTableWriter extends SSTableWriter
     private DecoratedKey lastWrittenKey;
     private DataPosition dataMark;
 
-    public BigTableWriter(Descriptor descriptor, 
-                          Long keyCount, 
-                          Long repairedAt, 
-                          CFMetaData metadata, 
+    private final SequentialWriterOption writerOption = SequentialWriterOption.newBuilder()
+                                                        .trickleFsync(DatabaseDescriptor.getTrickleFsync())
+                                                        .trickleFsyncByteInterval(DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024)
+                                                        .build();
+
+    public BigTableWriter(Descriptor descriptor,
+                          long keyCount,
+                          long repairedAt,
+                          CFMetaData metadata,
                           MetadataCollector metadataCollector, 
                           SerializationHeader header,
                           Collection<SSTableFlushObserver> observers,
@@ -73,18 +75,23 @@ public class BigTableWriter extends SSTableWriter
 
         if (compression)
         {
-            dataFile = SequentialWriter.open(getFilename(),
+            dataFile = new CompressedSequentialWriter(new File(getFilename()),
                                              descriptor.filenameFor(Component.COMPRESSION_INFO),
+                                             new File(descriptor.filenameFor(descriptor.digestComponent)),
+                                             writerOption,
                                              metadata.params.compression,
                                              metadataCollector);
             dbuilder = SegmentedFile.getCompressedBuilder((CompressedSequentialWriter) dataFile);
         }
         else
         {
-            dataFile = SequentialWriter.open(new File(getFilename()), new File(descriptor.filenameFor(Component.CRC)));
+            dataFile = new ChecksummedSequentialWriter(new File(getFilename()),
+                                                       new File(descriptor.filenameFor(Component.CRC)),
+                                                       new File(descriptor.filenameFor(descriptor.digestComponent)),
+                                                       writerOption);
             dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), false);
         }
-        iwriter = new IndexWriter(keyCount, dataFile);
+        iwriter = new IndexWriter(keyCount);
     }
 
     public void mark()
@@ -307,7 +314,7 @@ public class BigTableWriter extends SSTableWriter
             iwriter.prepareToCommit();
 
             // write sstable statistics
-            dataFile.setDescriptor(descriptor).prepareToCommit();
+            dataFile.prepareToCommit();
             writeMetadata(descriptor, finalizeMetadata());
 
             // save the table of components
@@ -339,13 +346,13 @@ public class BigTableWriter extends SSTableWriter
         }
     }
 
-    private static void writeMetadata(Descriptor desc, Map<MetadataType, MetadataComponent> components)
+    private void writeMetadata(Descriptor desc, Map<MetadataType, MetadataComponent> components)
     {
         File file = new File(desc.filenameFor(Component.STATS));
-        try (SequentialWriter out = SequentialWriter.open(file))
+        try (SequentialWriter out = new SequentialWriter(file, writerOption))
         {
             desc.getMetadataSerializer().serialize(components, out, desc.version);
-            out.setDescriptor(desc).finish();
+            out.finish();
         }
         catch (IOException e)
         {
@@ -374,27 +381,15 @@ public class BigTableWriter extends SSTableWriter
         public final IFilter bf;
         private DataPosition mark;
 
-        IndexWriter(long keyCount, final SequentialWriter dataFile)
+        IndexWriter(long keyCount)
         {
-            indexFile = SequentialWriter.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)));
+            indexFile = new SequentialWriter(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)), writerOption);
             builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
             summary = new IndexSummaryBuilder(keyCount, metadata.params.minIndexInterval, Downsampling.BASE_SAMPLING_LEVEL);
             bf = FilterFactory.getFilter(keyCount, metadata.params.bloomFilterFpChance, true, descriptor.version.hasOldBfHashOrder());
             // register listeners to be alerted when the data files are flushed
-            indexFile.setPostFlushListener(new Runnable()
-            {
-                public void run()
-                {
-                    summary.markIndexSynced(indexFile.getLastFlushOffset());
-                }
-            });
-            dataFile.setPostFlushListener(new Runnable()
-            {
-                public void run()
-                {
-                    summary.markDataSynced(dataFile.getLastFlushOffset());
-                }
-            });
+            indexFile.setPostFlushListener(() -> summary.markIndexSynced(indexFile.getLastFlushOffset()));
+            dataFile.setPostFlushListener(() -> summary.markDataSynced(dataFile.getLastFlushOffset()));
         }
 
         // finds the last (-offset) decorated key that can be guaranteed to occur fully in the flushed portion of the index file
@@ -465,15 +460,15 @@ public class BigTableWriter extends SSTableWriter
             flushBf();
 
             // truncate index file
-            long position = iwriter.indexFile.position();
-            iwriter.indexFile.setDescriptor(descriptor).prepareToCommit();
-            FileUtils.truncate(iwriter.indexFile.getPath(), position);
+            long position = indexFile.position();
+            indexFile.prepareToCommit();
+            FileUtils.truncate(indexFile.getPath(), position);
 
             // save summary
             summary.prepareToCommit();
-            try (IndexSummary summary = iwriter.summary.build(getPartitioner()))
+            try (IndexSummary indexSummary = summary.build(getPartitioner()))
             {
-                SSTableReader.saveSummary(descriptor, first, last, iwriter.builder, dbuilder, summary);
+                SSTableReader.saveSummary(descriptor, first, last, builder, dbuilder, indexSummary);
             }
         }
 

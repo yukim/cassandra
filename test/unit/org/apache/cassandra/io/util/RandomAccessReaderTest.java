@@ -248,7 +248,7 @@ public class RandomAccessReaderTest
         final File f = File.createTempFile("testReadFully", "1");
         f.deleteOnExit();
 
-        try(SequentialWriter writer = SequentialWriter.open(f))
+        try(SequentialWriter writer = new SequentialWriter(f))
         {
             long numWritten = 0;
             while (numWritten < params.fileLength)
@@ -307,7 +307,7 @@ public class RandomAccessReaderTest
         File f = File.createTempFile("testReadBytes", "1");
         final String expected = "The quick brown fox jumps over the lazy dog";
 
-        try(SequentialWriter writer = SequentialWriter.open(f))
+        try(SequentialWriter writer = new SequentialWriter(f))
         {
             writer.write(expected.getBytes());
             writer.finish();
@@ -336,7 +336,7 @@ public class RandomAccessReaderTest
         final String expected = "The quick brown fox jumps over the lazy dog";
         final int numIterations = 10;
 
-        try(SequentialWriter writer = SequentialWriter.open(f))
+        try(SequentialWriter writer = new SequentialWriter(f))
         {
             for (int i = 0; i < numIterations; i++)
                 writer.write(expected.getBytes());
@@ -416,7 +416,7 @@ public class RandomAccessReaderTest
         Random r = new Random(seed);
         r.nextBytes(expected);
 
-        try(SequentialWriter writer = SequentialWriter.open(f))
+        try(SequentialWriter writer = new SequentialWriter(f))
         {
             writer.write(expected);
             writer.finish();

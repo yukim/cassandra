@@ -23,10 +23,11 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.util.zip.CRC32;
 
+import javax.annotation.Nonnull;
+
 import com.google.common.base.Charsets;
 
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.sstable.Descriptor;
 
 public class ChecksumWriter
 {
@@ -62,7 +63,6 @@ public class ChecksumWriter
     {
         try
         {
-
             ByteBuffer toAppend = bb.duplicate();
             toAppend.mark();
             incrementalChecksum.update(toAppend);
@@ -88,18 +88,15 @@ public class ChecksumWriter
         }
     }
 
-    public void writeFullChecksum(Descriptor descriptor)
+    public void writeFullChecksum(@Nonnull File digestFile)
     {
-        if (descriptor.digestComponent == null)
-            throw new NullPointerException("Null digest component for " + descriptor.ksname + '.' + descriptor.cfname + " file " + descriptor.baseFilename());
-        File outFile = new File(descriptor.filenameFor(descriptor.digestComponent));
-        try (BufferedWriter out = Files.newBufferedWriter(outFile.toPath(), Charsets.UTF_8))
+        try (BufferedWriter out = Files.newBufferedWriter(digestFile.toPath(), Charsets.UTF_8))
         {
             out.write(String.valueOf(fullChecksum.getValue()));
         }
         catch (IOException e)
         {
-            throw new FSWriteError(e, outFile);
+            throw new FSWriteError(e, digestFile);
         }
     }
 }
