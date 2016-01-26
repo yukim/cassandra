@@ -5,7 +5,6 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -50,11 +49,11 @@ public final class JsonTransformer
 
     private final CFMetaData metadata;
 
-    private final AtomicReference<ISSTableScanner> currentScanner;
+    private final ISSTableScanner currentScanner;
 
     private long currentPosition = 0;
 
-    private JsonTransformer(JsonGenerator json, AtomicReference<ISSTableScanner> currentScanner, CFMetaData metadata)
+    private JsonTransformer(JsonGenerator json, ISSTableScanner currentScanner, CFMetaData metadata)
     {
         this.json = json;
         this.metadata = metadata;
@@ -66,7 +65,7 @@ public final class JsonTransformer
         json.setPrettyPrinter(prettyPrinter);
     }
 
-    public static void toJson(AtomicReference<ISSTableScanner> currentScanner, Stream<UnfilteredRowIterator> partitions, CFMetaData metadata, OutputStream out)
+    public static void toJson(ISSTableScanner currentScanner, Stream<UnfilteredRowIterator> partitions, CFMetaData metadata, OutputStream out)
             throws IOException
     {
         try (JsonGenerator json = jsonFactory.createJsonGenerator(new OutputStreamWriter(out, "UTF-8")))
@@ -78,7 +77,7 @@ public final class JsonTransformer
         }
     }
 
-    public static void keysToJson(AtomicReference<ISSTableScanner> currentScanner, Stream<DecoratedKey> keys, CFMetaData metadata, OutputStream out) throws IOException
+    public static void keysToJson(ISSTableScanner currentScanner, Stream<DecoratedKey> keys, CFMetaData metadata, OutputStream out) throws IOException
     {
         try (JsonGenerator json = jsonFactory.createJsonGenerator(new OutputStreamWriter(out, "UTF-8")))
         {
@@ -91,7 +90,7 @@ public final class JsonTransformer
 
     private void updatePosition()
     {
-        this.currentPosition = currentScanner.get().getCurrentPosition();
+        this.currentPosition = currentScanner.getCurrentPosition();
     }
 
     private void serializePartitionKey(DecoratedKey key)
@@ -163,7 +162,7 @@ public final class JsonTransformer
             json.writeStartObject();
             json.writeFieldName("key");
             serializePartitionKey(partition.partitionKey());
-            json.writeNumberField("position", this.currentScanner.get().getCurrentPosition());
+            json.writeNumberField("position", this.currentScanner.getCurrentPosition());
 
             if (!partition.partitionLevelDeletion().isLive())
             {

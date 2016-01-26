@@ -27,6 +27,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PreHashedDecoratedKey;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.PartitionerDefinedOrder;
+import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -160,6 +161,12 @@ public class Murmur3Partitioner implements IPartitioner
             long v = n.token - token;  // Overflow acceptable and desired.
             double d = Math.scalb((double) v, -Long.SIZE); // Scale so that the full range is 1.
             return d > 0.0 ? d : (d + 1.0); // Adjust for signed long, also making sure t.size(t) == 1.
+        }
+
+        @Override
+        public Token decreaseSlightly()
+        {
+            return new LongToken(token - 1);
         }
 
         @Override

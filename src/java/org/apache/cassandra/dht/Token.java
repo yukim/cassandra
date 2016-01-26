@@ -20,10 +20,12 @@ package org.apache.cassandra.dht;
 import java.io.DataInput;
 import java.io.IOException;
 import java.io.Serializable;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.TypeSizes;
+import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -84,6 +86,7 @@ public abstract class Token implements RingPosition<Token>, Serializable
      * the token allocation algorithm.
      */
     abstract public Token increaseSlightly();
+    abstract public Token decreaseSlightly();
 
     public Token getToken()
     {

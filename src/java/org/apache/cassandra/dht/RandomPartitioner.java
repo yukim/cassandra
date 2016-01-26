@@ -30,6 +30,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.IntegerType;
 import org.apache.cassandra.db.marshal.PartitionerDefinedOrder;
+import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.GuidGenerator;
@@ -166,6 +167,12 @@ public class RandomPartitioner implements IPartitioner
         public long getHeapSize()
         {
             return HEAP_SIZE;
+        }
+
+        @Override
+        public Token decreaseSlightly()
+        {
+            return new BigIntegerToken(token.subtract(BigInteger.ONE));
         }
     }
 

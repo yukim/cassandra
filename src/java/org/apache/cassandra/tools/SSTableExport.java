@@ -23,11 +23,13 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -44,6 +46,8 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.dht.Bounds;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
@@ -107,10 +111,6 @@ public class SSTableExport
     {
         try
         {
-            Schema.instance.setKeyspaceMetadata(
-                    KeyspaceMetadata.create("keyspace", KeyspaceParams.local(), Tables.none(), Views.none(),
-                            Types.none(), Functions.none()));
-
             EnumSet<MetadataType> types = EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS, MetadataType.HEADER);
             Map<MetadataType, MetadataComponent> sstableMetadata = desc.getMetadataSerializer().deserialize(desc,
                     types);
@@ -209,44 +209,40 @@ public class SSTableExport
             {
                 SSTableReader sstable = SSTableReader.openNoValidation(desc, metadata);
                 IPartitioner partitioner = sstable.getPartitioner();
-                AtomicReference<ISSTableScanner> currentScanner = new AtomicReference();
-                Stream<UnfilteredRowIterator> partitions = null;
+                final ISSTableScanner currentScanner;
                 if ((keys != null) && (keys.length > 0))
                 {
-                    partitions = Arrays.stream(keys)
+                    Stream<Token> tokens = Arrays.stream(keys)
                             .filter(key -> !excludes.contains(key))
                             .map(metadata.getKeyValidator()::fromString)
                             .map(partitioner::decorateKey)
                             .sorted()
-                            .map(DecoratedKey::getToken)
-                            .map(token -> {
-                                currentScanner.set(sstable.getScanner(ColumnFilter.all(metadata),
-                                        new DataRange(Bounds.makeRowBounds(token, token),
-                                                new ClusteringIndexSliceFilter(Slices.ALL, false)),
-                                        RateLimiter.create(Double.MAX_VALUE),
-                                        false));
-                                return currentScanner.get().next();
-                            });
+                            .map(DecoratedKey::getToken);
+                    List<Range<Token>> ts = tokens.map(t -> new Range<Token>(t.decreaseSlightly(), t)).collect(Collectors.toList());
+                    currentScanner = sstable.getScanner(ts, RateLimiter.create(Double.MAX_VALUE));
                 }
                 else
                 {
-                    currentScanner.set(sstable.getScanner());
-                    partitions = iterToStream(currentScanner.get()).filter(i -> {
-                        return excludes == null ||
-                                excludes.isEmpty() ||
-                                !excludes.contains(metadata.getKeyValidator().getString(i.partitionKey().getKey()));
-                    });
+                    currentScanner = sstable.getScanner();
                 }
+                Stream<UnfilteredRowIterator> partitions = iterToStream(currentScanner).filter(i ->
+                {
+                    return excludes == null ||
+                            excludes.isEmpty() ||
+                            !excludes.contains(metadata.getKeyValidator().getString(i.partitionKey().getKey()));
+                });
                 if (cmd.hasOption(DEBUG_OUTPUT_OPTION))
                 {
                     AtomicLong position = new AtomicLong();
-                    partitions.forEach(partition -> {
-                        position.set(currentScanner.get().getCurrentPosition());
-                        partition.forEachRemaining(row -> {
+                    partitions.forEach(partition -> 
+                    {
+                        position.set(currentScanner.getCurrentPosition());
+                        partition.forEachRemaining(row -> 
+                        {
                             System.out.println(
                                     "[" + metadata.getKeyValidator().getString(partition.partitionKey().getKey()) + "]@"
                                             + position.get() + " " + row.toString(metadata, false, true));
-                            position.set(currentScanner.get().getCurrentPosition());
+                            position.set(currentScanner.getCurrentPosition());
                         });
                     });
                 }
