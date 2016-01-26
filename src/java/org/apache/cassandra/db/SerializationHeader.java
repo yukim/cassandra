@@ -282,11 +282,11 @@ public class SerializationHeader
      */
     public static class Component extends MetadataComponent
     {
-        public final AbstractType<?> keyType;
-        public final List<AbstractType<?>> clusteringTypes;
-        public final Map<ByteBuffer, AbstractType<?>> staticColumns;
-        public final Map<ByteBuffer, AbstractType<?>> regularColumns;
-        public final EncodingStats stats;
+        private final AbstractType<?> keyType;
+        private final List<AbstractType<?>> clusteringTypes;
+        private final Map<ByteBuffer, AbstractType<?>> staticColumns;
+        private final Map<ByteBuffer, AbstractType<?>> regularColumns;
+        private final EncodingStats stats;
 
         private Component(AbstractType<?> keyType,
                           List<AbstractType<?>> clusteringTypes,

@@ -128,16 +128,16 @@ public class SSTableExport
             DatabaseDescriptor.setPartitionerUnsafe(partitioner);
 
             CFMetaData.Builder builder = CFMetaData.Builder.create("keyspace", "table");
-            header.staticColumns.entrySet().stream()
+            header.getStaticColumns().entrySet().stream()
                     .forEach(entry -> builder.addStaticColumn(UTF8Type.instance.getString(entry.getKey()),
                             entry.getValue()));
-            header.regularColumns.entrySet().stream()
+            header.getRegularColumns().entrySet().stream()
                     .forEach(entry -> builder.addRegularColumn(UTF8Type.instance.getString(entry.getKey()),
                             entry.getValue()));
-            builder.addPartitionKey("PartitionKey", header.keyType);
-            for (int i = 0; i < header.clusteringTypes.size(); i++)
+            builder.addPartitionKey("PartitionKey", header.getKetType());
+            for (int i = 0; i < header.getClusteringTypes().size(); i++)
             {
-                builder.addClusteringColumn("clustering" + (i > 0 ? i : ""), header.clusteringTypes.get(i));
+                builder.addClusteringColumn("clustering" + (i > 0 ? i : ""), header.getClusteringTypes().get(i));
             }
             return builder.build();
         }
