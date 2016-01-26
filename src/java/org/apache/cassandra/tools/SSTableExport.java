@@ -33,7 +33,6 @@ import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
@@ -45,7 +44,6 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.dht.Bounds;
 import org.apache.cassandra.dht.IPartitioner;
-import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
@@ -88,10 +86,6 @@ public class SSTableExport
     {
         Config.setClientMode(true);
 
-        // Partitioner is not set in client mode.
-        if (DatabaseDescriptor.getPartitioner() == null)
-            DatabaseDescriptor.setPartitionerUnsafe(Murmur3Partitioner.instance);
-
         Option optKey = new Option(KEY_OPTION, true, "Row key");
         // Number of times -k <key> can be passed on the command line.
         optKey.setArgs(500);
@@ -125,9 +119,7 @@ public class SSTableExport
                     .get(MetadataType.HEADER);
 
             IPartitioner partitioner = FBUtilities.newPartitioner(validationMetadata.partitioner);
-            DatabaseDescriptor.setPartitionerUnsafe(partitioner);
-
-            CFMetaData.Builder builder = CFMetaData.Builder.create("keyspace", "table");
+            CFMetaData.Builder builder = CFMetaData.Builder.create("keyspace", "table").withPartitioner(partitioner);
             header.getStaticColumns().entrySet().stream()
                     .forEach(entry -> builder.addStaticColumn(UTF8Type.instance.getString(entry.getKey()),
                             entry.getValue()));
