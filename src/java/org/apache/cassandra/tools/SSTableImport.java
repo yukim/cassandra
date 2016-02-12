@@ -469,6 +469,7 @@ public class SSTableImport
      */
     public static void main(String[] args) throws ParseException, ConfigurationException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         CommandLineParser parser = new PosixParser();
 
         try

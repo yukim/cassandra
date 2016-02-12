@@ -2378,7 +2378,7 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
 
             // Don't track read rates for tables in the system keyspace and don't bother trying to load or persist
             // the read meter when in client mode.
-            if (Keyspace.SYSTEM_KS.equals(desc.ksname) || Config.isClientMode())
+            if (Keyspace.SYSTEM_KS.equals(desc.ksname) || Config.isClientMode() || !DatabaseDescriptor.isCommitLogEnabled())
             {
                 readMeter = null;
                 readMeterSyncFuture = null;
@@ -2405,7 +2405,8 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
             lookup.remove(desc);
             if (readMeterSyncFuture != null)
                 readMeterSyncFuture.cancel(true);
-            if (isCompacted.get())
+            // TODO check commit log is enabled (meaning not from offline tools) so it won't hang
+            if (isCompacted.get() && DatabaseDescriptor.isCommitLogEnabled())
                 SystemKeyspace.clearSSTableReadMeter(desc.ksname, desc.cfname, desc.generation);
             // don't ideally want to dropPageCache for the file until all instances have been released
             CLibrary.trySkipCache(desc.filenameFor(Component.DATA), 0, 0);

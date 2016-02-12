@@ -57,6 +57,7 @@ public class StandaloneScrubber
 
     public static void main(String args[])
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         Options options = Options.parseArgs(args);
         try
         {

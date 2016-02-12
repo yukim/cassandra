@@ -118,6 +118,8 @@ public class DatabaseDescriptor
     private static String localDC;
     private static Comparator<InetAddress> localComparator;
 
+    private static boolean commitLogEnabled = true;
+
     static
     {
         // In client mode, we use a default configuration. Note that the fields of this class will be
@@ -1713,4 +1715,17 @@ public class DatabaseDescriptor
         return conf.gc_warn_threshold_in_ms;
     }
 
+    public static boolean isCommitLogEnabled()
+    {
+        return commitLogEnabled;
+    }
+
+    /**
+     * Disable commit log segment allocation for offline tools.
+     * This *MUST* be called before CommitLog is accessed. (Typically before accessing ColumnFamilyStore)
+     */
+    public static void disableCommitLogForOfflineTool()
+    {
+        DatabaseDescriptor.commitLogEnabled = false;
+    }
 }

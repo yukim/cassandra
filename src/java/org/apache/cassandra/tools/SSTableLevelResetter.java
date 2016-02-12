@@ -42,6 +42,7 @@ public class SSTableLevelResetter
      */
     public static void main(String[] args) throws IOException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         PrintStream out = System.out;
         if (args.length == 0)
         {
@@ -63,7 +64,7 @@ public class SSTableLevelResetter
         try
         {
             // load keyspace descriptions.
-            DatabaseDescriptor.loadSchemas();
+            DatabaseDescriptor.loadSchemas(false);
 
             String keyspaceName = args[1];
             String columnfamily = args[2];

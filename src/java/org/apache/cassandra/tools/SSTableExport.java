@@ -392,6 +392,7 @@ public class SSTableExport
      */
     public static void main(String[] args) throws ConfigurationException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         String usage = String.format("Usage: %s <sstable> [-k key [-k key [...]] -x key [-x key [...]]]%n", SSTableExport.class.getName());
 
         CommandLineParser parser = new PosixParser();

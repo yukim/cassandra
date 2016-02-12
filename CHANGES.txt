@@ -1,4 +1,5 @@
 2.1.14
+ * Fix bug that creates commit log when running offline tools (CASSANDRA-8616)
  * COPY FROM fails when importing blob (CASSANDRA-11375)
  * Backport CASSANDRA-10679 (CASSANDRA-9598)
  * Don't do defragmentation if reading from repaired sstables (CASSANDRA-10342)

@@ -65,7 +65,8 @@ public class CommitLog implements CommitLogMBean
 
     private CommitLog()
     {
-        DatabaseDescriptor.createAllDirectories();
+        if (DatabaseDescriptor.isCommitLogEnabled())
+            DatabaseDescriptor.createAllDirectories();
 
         allocator = new CommitLogSegmentManager();
 
@@ -163,7 +164,7 @@ public class CommitLog implements CommitLogMBean
      */
     public ReplayPosition getContext()
     {
-        return allocator.allocatingFrom().getContext();
+        return DatabaseDescriptor.isCommitLogEnabled() ? allocator.allocatingFrom().getContext() : ReplayPosition.NONE;
     }
 
     /**

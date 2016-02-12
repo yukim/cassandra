@@ -49,6 +49,7 @@ public class StandaloneSplitter
 
     public static void main(String args[]) throws IOException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         Options options = Options.parseArgs(args);
         try
         {

@@ -50,6 +50,7 @@ public class SSTableExpiredBlockers
 {
     public static void main(String[] args) throws IOException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         PrintStream out = System.out;
         if (args.length < 2)
         {
@@ -58,7 +59,7 @@ public class SSTableExpiredBlockers
         }
         String keyspace = args[args.length - 2];
         String columnfamily = args[args.length - 1];
-        DatabaseDescriptor.loadSchemas();
+        DatabaseDescriptor.loadSchemas(false);
 
         CFMetaData metadata = Schema.instance.getCFMetaData(keyspace, columnfamily);
         if (metadata == null)
