@@ -75,13 +75,6 @@ abstract class ComparableObjectToken<C extends Comparable<C>> extends Token
     }
 
     @Override
-    public Token decreaseSlightly()
-    {
-        throw new UnsupportedOperationException(String.format("Token type %s does not support token allocation.",
-                                                              getClass().getSimpleName()));
-    }
-
-    @Override
     public Token increaseSlightly()
     {
         throw new UnsupportedOperationException(String.format("Token type %s does not support token allocation.",

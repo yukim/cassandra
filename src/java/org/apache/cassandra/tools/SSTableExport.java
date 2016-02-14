@@ -28,22 +28,18 @@ import java.util.Map;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.SerializationHeader;
-import org.apache.cassandra.db.Slices;
-import org.apache.cassandra.db.filter.ClusteringIndexSliceFilter;
-import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Bounds;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
@@ -56,12 +52,6 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
 import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.ValidationMetadata;
-import org.apache.cassandra.schema.Functions;
-import org.apache.cassandra.schema.KeyspaceMetadata;
-import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.schema.Tables;
-import org.apache.cassandra.schema.Types;
-import org.apache.cassandra.schema.Views;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -69,8 +59,6 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.PosixParser;
-
-import com.google.common.util.concurrent.RateLimiter;
 
 /**
  * Export SSTables to JSON format.
@@ -212,14 +200,14 @@ public class SSTableExport
                 final ISSTableScanner currentScanner;
                 if ((keys != null) && (keys.length > 0))
                 {
-                    Stream<Token> tokens = Arrays.stream(keys)
+                    List<AbstractBounds<PartitionPosition>> bounds = Arrays.stream(keys)
                             .filter(key -> !excludes.contains(key))
                             .map(metadata.getKeyValidator()::fromString)
                             .map(partitioner::decorateKey)
                             .sorted()
-                            .map(DecoratedKey::getToken);
-                    List<Range<Token>> ts = tokens.map(t -> new Range<Token>(t.decreaseSlightly(), t)).collect(Collectors.toList());
-                    currentScanner = sstable.getScanner(ts, RateLimiter.create(Double.MAX_VALUE));
+                            .map(DecoratedKey::getToken)
+                            .map(token -> new Bounds<>(token.minKeyBound(), token.maxKeyBound())).collect(Collectors.toList());
+                    currentScanner = sstable.getScanner(bounds.iterator());
                 }
                 else
                 {
@@ -227,8 +215,7 @@ public class SSTableExport
                 }
                 Stream<UnfilteredRowIterator> partitions = iterToStream(currentScanner).filter(i ->
                 {
-                    return excludes == null ||
-                            excludes.isEmpty() ||
+                    return excludes.isEmpty() ||
                             !excludes.contains(metadata.getKeyValidator().getString(i.partitionKey().getKey()));
                 });
                 if (cmd.hasOption(DEBUG_OUTPUT_OPTION))

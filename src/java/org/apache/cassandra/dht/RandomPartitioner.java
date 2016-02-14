@@ -168,12 +168,6 @@ public class RandomPartitioner implements IPartitioner
         {
             return HEAP_SIZE;
         }
-
-        @Override
-        public Token decreaseSlightly()
-        {
-            return new BigIntegerToken(token.subtract(BigInteger.ONE));
-        }
     }
 
     public BigIntegerToken getToken(ByteBuffer key)

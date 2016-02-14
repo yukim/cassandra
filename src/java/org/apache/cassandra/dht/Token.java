@@ -86,7 +86,6 @@ public abstract class Token implements RingPosition<Token>, Serializable
      * the token allocation algorithm.
      */
     abstract public Token increaseSlightly();
-    abstract public Token decreaseSlightly();
 
     public Token getToken()
     {

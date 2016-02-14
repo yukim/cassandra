@@ -164,12 +164,6 @@ public class Murmur3Partitioner implements IPartitioner
         }
 
         @Override
-        public Token decreaseSlightly()
-        {
-            return new LongToken(token - 1);
-        }
-
-        @Override
         public Token increaseSlightly()
         {
             return new LongToken(token + 1);
