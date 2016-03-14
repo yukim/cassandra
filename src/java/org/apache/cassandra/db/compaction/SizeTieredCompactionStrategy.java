@@ -177,17 +177,16 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
     @SuppressWarnings("resource")
     public AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-        while (true)
-        {
-            List<SSTableReader> hottestBucket = getNextBackgroundSSTables(gcBefore);
+        List<SSTableReader> hottestBucket = getNextBackgroundSSTables(gcBefore);
 
-            if (hottestBucket.isEmpty())
-                return null;
+        if (hottestBucket.isEmpty())
+            return null;
 
-            LifecycleTransaction transaction = cfs.getTracker().tryModify(hottestBucket, OperationType.COMPACTION);
-            if (transaction != null)
-                return new CompactionTask(cfs, transaction, gcBefore);
-        }
+        LifecycleTransaction transaction = cfs.getTracker().tryModify(hottestBucket, OperationType.COMPACTION);
+        if (transaction != null)
+            return new CompactionTask(cfs, transaction, gcBefore);
+        else
+            return null;
     }
 
     @SuppressWarnings("resource")

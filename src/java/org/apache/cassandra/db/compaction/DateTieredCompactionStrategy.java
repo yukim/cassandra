@@ -65,17 +65,16 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
     @SuppressWarnings("resource")
     public AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-        while (true)
-        {
-            List<SSTableReader> latestBucket = getNextBackgroundSSTables(gcBefore);
+        List<SSTableReader> latestBucket = getNextBackgroundSSTables(gcBefore);
 
-            if (latestBucket.isEmpty())
-                return null;
+        if (latestBucket.isEmpty())
+            return null;
 
-            LifecycleTransaction modifier = cfs.getTracker().tryModify(latestBucket, OperationType.COMPACTION);
-            if (modifier != null)
-                return new CompactionTask(cfs, modifier, gcBefore);
-        }
+        LifecycleTransaction modifier = cfs.getTracker().tryModify(latestBucket, OperationType.COMPACTION);
+        if (modifier != null)
+            return new CompactionTask(cfs, modifier, gcBefore);
+        else
+            return null;
     }
 
     /**

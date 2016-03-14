@@ -92,36 +92,37 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
     @SuppressWarnings("resource")
     public AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
-        while (true)
+        OperationType op;
+        LeveledManifest.CompactionCandidate candidate = manifest.getCompactionCandidates();
+        if (candidate == null)
         {
-            OperationType op;
-            LeveledManifest.CompactionCandidate candidate = manifest.getCompactionCandidates();
-            if (candidate == null)
+            // if there is no sstable to compact in standard way, try compacting based on droppable tombstone ratio
+            SSTableReader sstable = findDroppableSSTable(gcBefore);
+            if (sstable == null)
             {
-                // if there is no sstable to compact in standard way, try compacting based on droppable tombstone ratio
-                SSTableReader sstable = findDroppableSSTable(gcBefore);
-                if (sstable == null)
-                {
-                    logger.trace("No compaction necessary for {}", this);
-                    return null;
-                }
-                candidate = new LeveledManifest.CompactionCandidate(Collections.singleton(sstable),
-                                                                    sstable.getSSTableLevel(),
-                                                                    getMaxSSTableBytes());
-                op = OperationType.TOMBSTONE_COMPACTION;
+                logger.trace("No compaction necessary for {}", this);
+                return null;
             }
-            else
-            {
-                op = OperationType.COMPACTION;
-            }
+            candidate = new LeveledManifest.CompactionCandidate(Collections.singleton(sstable),
+                                                                sstable.getSSTableLevel(),
+                                                                getMaxSSTableBytes());
+            op = OperationType.TOMBSTONE_COMPACTION;
+        }
+        else
+        {
+            op = OperationType.COMPACTION;
+        }
 
-            LifecycleTransaction txn = cfs.getTracker().tryModify(candidate.sstables, OperationType.COMPACTION);
-            if (txn != null)
-            {
-                LeveledCompactionTask newTask = new LeveledCompactionTask(cfs, txn, candidate.level, gcBefore, candidate.maxSSTableBytes, false);
-                newTask.setCompactionType(op);
-                return newTask;
-            }
+        LifecycleTransaction txn = cfs.getTracker().tryModify(candidate.sstables, OperationType.COMPACTION);
+        if (txn != null)
+        {
+            LeveledCompactionTask newTask = new LeveledCompactionTask(cfs, txn, candidate.level, gcBefore, candidate.maxSSTableBytes, false);
+            newTask.setCompactionType(op);
+            return newTask;
+        }
+        else
+        {
+            return null;
         }
     }
 
