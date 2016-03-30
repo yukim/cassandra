@@ -98,7 +98,8 @@ public class CommitLog implements CommitLogMBean
         compressorClass = DatabaseDescriptor.getCommitLogCompression();
         this.location = location;
         ICompressor compressor = compressorClass != null ? CompressionParams.createCompressor(compressorClass) : null;
-        DatabaseDescriptor.createAllDirectories();
+        if (DatabaseDescriptor.isCommitLogEnabled())
+            DatabaseDescriptor.createAllDirectories();
         encryptionContext = DatabaseDescriptor.getEncryptionContext();
 
         this.compressor = compressor;
@@ -209,7 +210,7 @@ public class CommitLog implements CommitLogMBean
      */
     public ReplayPosition getContext()
     {
-        return allocator.allocatingFrom().getContext();
+        return DatabaseDescriptor.isCommitLogEnabled() ? allocator.allocatingFrom().getContext() : ReplayPosition.NONE;
     }
 
     /**

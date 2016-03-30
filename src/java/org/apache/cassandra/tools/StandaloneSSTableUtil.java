@@ -19,6 +19,7 @@
 package org.apache.cassandra.tools;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
@@ -43,6 +44,7 @@ public class StandaloneSSTableUtil
 
     public static void main(String args[])
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         Options options = Options.parseArgs(args);
         try
         {

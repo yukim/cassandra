@@ -47,6 +47,7 @@ public class StandaloneUpgrader
 
     public static void main(String args[])
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         Options options = Options.parseArgs(args);
         Util.initDatabaseDescriptor();
 

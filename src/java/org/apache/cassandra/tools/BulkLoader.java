@@ -51,6 +51,7 @@ public class BulkLoader
     public static void load(LoaderOptions options) throws BulkLoadException
     {
         Config.setClientMode(true);
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         OutputHandler handler = new OutputHandler.SystemOutput(options.verbose, options.debug);
         SSTableLoader loader = new SSTableLoader(
                 options.directory,

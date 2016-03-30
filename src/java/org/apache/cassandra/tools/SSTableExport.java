@@ -29,6 +29,7 @@ import org.apache.commons.cli.*;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Config;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
@@ -138,6 +139,7 @@ public class SSTableExport
      */
     public static void main(String[] args) throws ConfigurationException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         CommandLineParser parser = new PosixParser();
         try
         {

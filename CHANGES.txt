@@ -27,6 +27,7 @@ Merged from 2.2:
  * Only log yaml config once, at startup (CASSANDRA-11217)
  * Reference leak with parallel repairs on the same table (CASSANDRA-11215)
 Merged from 2.1:
+ * Fix bug that creates commit log when running offline tools (CASSANDRA-8616)
  * Add a -j parameter to scrub/cleanup/upgradesstables to state how
    many threads to use (CASSANDRA-11179)
  * COPY FROM on large datasets: fix progress report and debug performance (CASSANDRA-11053)

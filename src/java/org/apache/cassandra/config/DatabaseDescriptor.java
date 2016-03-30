@@ -104,6 +104,7 @@ public class DatabaseDescriptor
     private static Comparator<InetAddress> localComparator;
     private static EncryptionContext encryptionContext;
     private static boolean hasLoggedConfig;
+    private static boolean commitLogEnabled = true;
 
     public static void forceStaticInitialization() {}
     static
@@ -2038,5 +2039,19 @@ public class DatabaseDescriptor
     public static int searchConcurrencyFactor()
     {
         return Integer.valueOf(System.getProperty("cassandra.search_concurrency_factor", "1"));
+    }
+
+    public static boolean isCommitLogEnabled()
+    {
+        return commitLogEnabled;
+    }
+
+    /**
+     * Disable commit log segment allocation for offline tools.
+     * This *MUST* be called before CommitLog is accessed. (Typically before accessing ColumnFamilyStore)
+     */
+    public static void disableCommitLogForOfflineTool()
+    {
+        DatabaseDescriptor.commitLogEnabled = false;
     }
 }

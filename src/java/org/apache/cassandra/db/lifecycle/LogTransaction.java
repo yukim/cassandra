@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.OperationType;
@@ -303,7 +304,9 @@ class LogTransaction extends Transactional.AbstractTransactional implements Tran
 
         public void run()
         {
-            SystemKeyspace.clearSSTableReadMeter(desc.ksname, desc.cfname, desc.generation);
+            // TODO check commit log is enabled (meaning not from offline tools) so it won't hang
+            if (DatabaseDescriptor.isCommitLogEnabled())
+                SystemKeyspace.clearSSTableReadMeter(desc.ksname, desc.cfname, desc.generation);
 
             try
             {

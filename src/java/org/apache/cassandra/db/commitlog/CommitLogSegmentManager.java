@@ -174,7 +174,8 @@ public class CommitLogSegmentManager
         run = true;
 
         managerThread = new Thread(runnable, "COMMIT-LOG-ALLOCATOR");
-        managerThread.start();
+        if (DatabaseDescriptor.isCommitLogEnabled())
+            managerThread.start();
     }
 
     /**

@@ -21,6 +21,7 @@ import java.io.PrintStream;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
@@ -41,6 +42,7 @@ public class SSTableLevelResetter
      */
     public static void main(String[] args)
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         PrintStream out = System.out;
         if (args.length == 0)
         {
