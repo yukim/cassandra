@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.*;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.commons.cli.*;
 
@@ -383,6 +384,7 @@ public class SSTableExport
         System.err.println("WARNING: please note that sstable2json is now deprecated and will be removed in Cassandra 3.0. "
                          + "Please see https://issues.apache.org/jira/browse/CASSANDRA-9618 for details.");
 
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         String usage = String.format("Usage: %s <sstable> [-k key [-k key [...]] -x key [-x key [...]]]%n", SSTableExport.class.getName());
 
         CommandLineParser parser = new PosixParser();

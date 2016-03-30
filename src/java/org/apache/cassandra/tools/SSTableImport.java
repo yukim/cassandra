@@ -479,6 +479,7 @@ public class SSTableImport
                          + "You should use CQLSSTableWriter if you want to write sstables directly. "
                          + "Please see https://issues.apache.org/jira/browse/CASSANDRA-9618 for details.");
 
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         CommandLineParser parser = new PosixParser();
 
         try

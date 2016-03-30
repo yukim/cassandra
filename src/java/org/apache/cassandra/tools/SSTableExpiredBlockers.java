@@ -49,6 +49,7 @@ public class SSTableExpiredBlockers
 {
     public static void main(String[] args) throws IOException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         PrintStream out = System.out;
         if (args.length < 2)
         {
