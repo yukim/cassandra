@@ -42,6 +42,7 @@ import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
@@ -2236,7 +2237,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
             // Don't track read rates for tables in the system keyspace and don't bother trying to load or persist
             // the read meter when in client mode.
-            if (Schema.isSystemKeyspace(desc.ksname))
+            if (Schema.isSystemKeyspace(desc.ksname) || Config.isClientMode() || !DatabaseDescriptor.isCommitLogEnabled())
             {
                 readMeter = null;
                 readMeterSyncFuture = NULL;

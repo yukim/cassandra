@@ -101,6 +101,7 @@ public class DatabaseDescriptor
     private static String localDC;
     private static Comparator<InetAddress> localComparator;
     private static boolean hasLoggedConfig;
+    private static boolean commitLogEnabled = true;
 
     public static void forceStaticInitialization() {}
     static
@@ -1955,4 +1956,17 @@ public class DatabaseDescriptor
         return conf.gc_warn_threshold_in_ms;
     }
 
+    public static boolean isCommitLogEnabled()
+    {
+        return commitLogEnabled;
+    }
+
+    /**
+     * Disable commit log segment allocation for offline tools.
+     * This *MUST* be called before CommitLog is accessed. (Typically before accessing ColumnFamilyStore)
+     */
+    public static void disableCommitLogForOfflineTool()
+    {
+        DatabaseDescriptor.commitLogEnabled = false;
+    }
 }

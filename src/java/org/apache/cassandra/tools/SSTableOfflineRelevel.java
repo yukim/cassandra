@@ -30,6 +30,7 @@ import java.util.Set;
 
 import com.google.common.base.Throwables;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
@@ -73,6 +74,7 @@ public class SSTableOfflineRelevel
      */
     public static void main(String[] args) throws IOException
     {
+        DatabaseDescriptor.disableCommitLogForOfflineTool();
         PrintStream out = System.out;
         if (args.length < 2)
         {
