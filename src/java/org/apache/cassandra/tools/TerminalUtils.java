@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.cassandra.tools;
 
 import static java.lang.String.format;
@@ -15,7 +32,7 @@ import com.google.common.collect.Lists;
 import org.apache.cassandra.utils.EstimatedHistogram;
 
 @SuppressWarnings("serial")
-public class TerminalUtils
+public final class TerminalUtils
 {
     public static final String RESET = "\u001B[0m";
     public static final String BLUE = "\u001B[34m";
@@ -23,10 +40,10 @@ public class TerminalUtils
     public static final String WHITE = "\u001B[37m";
     private static final List<String> ANSI_COLORS = Lists.newArrayList(RESET, BLUE, CYAN, WHITE);
 
-    private static String FULL_BAR_UNICODE = Strings.repeat("▓", 30);
-    private static String EMPTY_BAR_UNICODE = Strings.repeat("░", 30);
-    private static String FULL_BAR_ASCII = Strings.repeat("#", 30);
-    private static String EMPTY_BAR_ASCII = Strings.repeat("-", 30);
+    private static final String FULL_BAR_UNICODE = Strings.repeat("▓", 30);
+    private static final String EMPTY_BAR_UNICODE = Strings.repeat("░", 30);
+    private static final String FULL_BAR_ASCII = Strings.repeat("#", 30);
+    private static final String EMPTY_BAR_ASCII = Strings.repeat("-", 30);
 
     private static final TreeMap<Double, String> BARS_UNICODE = new TreeMap<Double, String>()
     {{
@@ -45,6 +62,10 @@ public class TerminalUtils
         this.put(0.75, "o");
         this.put(0.30, ".");
     }};
+
+    private TerminalUtils()
+    {
+    }
 
     private static TreeMap<Double, String> barmap(boolean unicode)
     {
@@ -183,9 +204,8 @@ public class TerminalUtils
             {
                 eh.add(e.getKey().longValue(), e.getValue());
             }
-            String[] percentiles = new String[]{"50th", "75th", "95th", "98th", "99th", "Min", "Max"};
-            long[] data = new long[]
-            {
+            String[] percentiles = {"50th", "75th", "95th", "98th", "99th", "Min", "Max"};
+            long[] data = {
                 eh.percentile(.5),
                 eh.percentile(.75),
                 eh.percentile(.95),

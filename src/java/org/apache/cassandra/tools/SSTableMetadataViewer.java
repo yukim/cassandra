@@ -82,7 +82,7 @@ public class SSTableMetadataViewer
     private static final String COLORS = "c";
     private static final String UNICODE = "u";
     private static final String SCAN = "s";
-    private static Comparator<ValuedByteBuffer> VCOMP = Comparator.comparingLong(ValuedByteBuffer::getValue).reversed();
+    private static final Comparator<ValuedByteBuffer> VCOMP = Comparator.comparingLong(ValuedByteBuffer::getValue).reversed();
 
     static
     {
@@ -92,7 +92,6 @@ public class SSTableMetadataViewer
     boolean color;
     boolean unicode;
     PrintStream out;
-    String[] files;
 
     public SSTableMetadataViewer()
     {
@@ -510,7 +509,7 @@ public class SSTableMetadataViewer
         public long value;
         public ByteBuffer buffer;
 
-        public ValuedByteBuffer(ByteBuffer buffer, long value)
+        ValuedByteBuffer(ByteBuffer buffer, long value)
         {
             this.value = value;
             this.buffer = buffer;
