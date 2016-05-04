@@ -313,7 +313,7 @@ public class BulkLoader
         public int interDcThrottle = 0;
         public int storagePort;
         public int sslStoragePort;
-        public EncryptionOptions encOptions = new EncryptionOptions.ClientEncryptionOptions();
+        public EncryptionOptions.ClientEncryptionOptions encOptions = new EncryptionOptions.ClientEncryptionOptions();
         public int connectionsPerHost = 1;
         public EncryptionOptions.ServerEncryptionOptions serverEncOptions = new EncryptionOptions.ServerEncryptionOptions();
 
@@ -453,6 +453,12 @@ public class BulkLoader
                 if (cmd.hasOption(INTER_DC_THROTTLE_MBITS))
                 {
                     opts.interDcThrottle = Integer.parseInt(cmd.getOptionValue(INTER_DC_THROTTLE_MBITS));
+                }
+
+                if (cmd.hasOption(SSL_TRUSTSTORE) || cmd.hasOption(SSL_TRUSTSTORE_PW) ||
+                    cmd.hasOption(SSL_KEYSTORE) || cmd.hasOption(SSL_KEYSTORE_PW))
+                {
+                    opts.encOptions.enabled = true;
                 }
 
                 if (cmd.hasOption(SSL_TRUSTSTORE))
