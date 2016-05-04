@@ -96,7 +96,7 @@ public class LoaderOptions
         int interDcThrottle = 0;
         int storagePort;
         int sslStoragePort;
-        EncryptionOptions encOptions = new EncryptionOptions.ClientEncryptionOptions();
+        EncryptionOptions.ClientEncryptionOptions encOptions = new EncryptionOptions.ClientEncryptionOptions();
         int connectionsPerHost = 1;
         EncryptionOptions.ServerEncryptionOptions serverEncOptions = new EncryptionOptions.ServerEncryptionOptions();
         Set<InetAddress> hosts = new HashSet<>();
@@ -185,7 +185,7 @@ public class LoaderOptions
             return this;
         }
 
-        public Builder encOptions(EncryptionOptions encOptions)
+        public Builder encOptions(EncryptionOptions.ClientEncryptionOptions encOptions)
         {
             this.encOptions = encOptions;
             return this;
@@ -369,6 +369,12 @@ public class LoaderOptions
                 if (cmd.hasOption(INTER_DC_THROTTLE_MBITS))
                 {
                     interDcThrottle = Integer.parseInt(cmd.getOptionValue(INTER_DC_THROTTLE_MBITS));
+                }
+
+                if (cmd.hasOption(SSL_TRUSTSTORE) || cmd.hasOption(SSL_TRUSTSTORE_PW) ||
+                            cmd.hasOption(SSL_KEYSTORE) || cmd.hasOption(SSL_KEYSTORE_PW))
+                {
+                    encOptions.enabled = true;
                 }
 
                 if (cmd.hasOption(SSL_TRUSTSTORE))
