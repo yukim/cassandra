@@ -20,9 +20,6 @@ package org.apache.cassandra.io.util;
 
 import org.junit.Test;
 
-import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
-
 import static org.junit.Assert.assertEquals;
 
 public class SegmentedFileTest
@@ -30,59 +27,59 @@ public class SegmentedFileTest
     @Test
     public void testRoundingBufferSize()
     {
-        assertEquals(4096, SegmentedFile.Builder.roundBufferSize(-1L));
-        assertEquals(4096, SegmentedFile.Builder.roundBufferSize(0));
-        assertEquals(4096, SegmentedFile.Builder.roundBufferSize(1));
-        assertEquals(4096, SegmentedFile.Builder.roundBufferSize(2013));
-        assertEquals(4096, SegmentedFile.Builder.roundBufferSize(4095));
-        assertEquals(4096, SegmentedFile.Builder.roundBufferSize(4096));
-        assertEquals(8192, SegmentedFile.Builder.roundBufferSize(4097));
-        assertEquals(8192, SegmentedFile.Builder.roundBufferSize(8191));
-        assertEquals(8192, SegmentedFile.Builder.roundBufferSize(8192));
-        assertEquals(12288, SegmentedFile.Builder.roundBufferSize(8193));
-        assertEquals(65536, SegmentedFile.Builder.roundBufferSize(65535));
-        assertEquals(65536, SegmentedFile.Builder.roundBufferSize(65536));
-        assertEquals(65536, SegmentedFile.Builder.roundBufferSize(65537));
-        assertEquals(65536, SegmentedFile.Builder.roundBufferSize(10000000000000000L));
+        DiskOptimizationStrategy strategy = new SsdDiskOptimizationStrategy(0.95);
+        assertEquals(4096, strategy.roundBufferSize(-1L));
+        assertEquals(4096, strategy.roundBufferSize(0));
+        assertEquals(4096, strategy.roundBufferSize(1));
+        assertEquals(4096, strategy.roundBufferSize(2013));
+        assertEquals(4096, strategy.roundBufferSize(4095));
+        assertEquals(4096, strategy.roundBufferSize(4096));
+        assertEquals(8192, strategy.roundBufferSize(4097));
+        assertEquals(8192, strategy.roundBufferSize(8191));
+        assertEquals(8192, strategy.roundBufferSize(8192));
+        assertEquals(12288, strategy.roundBufferSize(8193));
+        assertEquals(65536, strategy.roundBufferSize(65535));
+        assertEquals(65536, strategy.roundBufferSize(65536));
+        assertEquals(65536, strategy.roundBufferSize(65537));
+        assertEquals(65536, strategy.roundBufferSize(10000000000000000L));
     }
 
     @Test
     public void testBufferSize_ssd()
     {
-        DatabaseDescriptor.setDiskOptimizationStrategy(Config.DiskOptimizationStrategy.ssd);
-        DatabaseDescriptor.setDiskOptimizationPageCrossChance(0.1);
+        DiskOptimizationStrategy strategy = new SsdDiskOptimizationStrategy(0.1);
 
-        assertEquals(4096, SegmentedFile.Builder.bufferSize(0));
-        assertEquals(4096, SegmentedFile.Builder.bufferSize(10));
-        assertEquals(4096, SegmentedFile.Builder.bufferSize(100));
-        assertEquals(4096, SegmentedFile.Builder.bufferSize(4096));
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(4505));   // just < (4096 + 4096 * 0.1)
-        assertEquals(12288, SegmentedFile.Builder.bufferSize(4506));  // just > (4096 + 4096 * 0.1)
+        assertEquals(4096, strategy.bufferSize(0));
+        assertEquals(4096, strategy.bufferSize(10));
+        assertEquals(4096, strategy.bufferSize(100));
+        assertEquals(4096, strategy.bufferSize(4096));
+        assertEquals(8192, strategy.bufferSize(4505));   // just < (4096 + 4096 * 0.1)
+        assertEquals(12288, strategy.bufferSize(4506));  // just > (4096 + 4096 * 0.1)
 
-        DatabaseDescriptor.setDiskOptimizationPageCrossChance(0.5);
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(4506));  // just > (4096 + 4096 * 0.1)
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(6143));  // < (4096 + 4096 * 0.5)
-        assertEquals(12288, SegmentedFile.Builder.bufferSize(6144));  // = (4096 + 4096 * 0.5)
-        assertEquals(12288, SegmentedFile.Builder.bufferSize(6145));  // > (4096 + 4096 * 0.5)
+        strategy = new SsdDiskOptimizationStrategy(0.5);
+        assertEquals(8192, strategy.bufferSize(4506));  // just > (4096 + 4096 * 0.1)
+        assertEquals(8192, strategy.bufferSize(6143));  // < (4096 + 4096 * 0.5)
+        assertEquals(12288, strategy.bufferSize(6144));  // = (4096 + 4096 * 0.5)
+        assertEquals(12288, strategy.bufferSize(6145));  // > (4096 + 4096 * 0.5)
 
-        DatabaseDescriptor.setDiskOptimizationPageCrossChance(1.0); // never add a page
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(8191));
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(8192));
+        strategy = new SsdDiskOptimizationStrategy(1.0); // never add a page
+        assertEquals(8192, strategy.bufferSize(8191));
+        assertEquals(8192, strategy.bufferSize(8192));
 
-        DatabaseDescriptor.setDiskOptimizationPageCrossChance(0.0); // always add a page
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(10));
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(4096));
+        strategy = new SsdDiskOptimizationStrategy(0.0); // always add a page
+        assertEquals(8192, strategy.bufferSize(10));
+        assertEquals(8192, strategy.bufferSize(4096));
     }
 
     @Test
     public void testBufferSize_spinning()
     {
-        DatabaseDescriptor.setDiskOptimizationStrategy(Config.DiskOptimizationStrategy.spinning);
+        DiskOptimizationStrategy strategy = new SpinningDiskOptimizationStrategy();
 
-        assertEquals(4096, SegmentedFile.Builder.bufferSize(0));
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(10));
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(100));
-        assertEquals(8192, SegmentedFile.Builder.bufferSize(4096));
-        assertEquals(12288, SegmentedFile.Builder.bufferSize(4097));
+        assertEquals(4096, strategy.bufferSize(0));
+        assertEquals(8192, strategy.bufferSize(10));
+        assertEquals(8192, strategy.bufferSize(100));
+        assertEquals(8192, strategy.bufferSize(4096));
+        assertEquals(12288, strategy.bufferSize(4097));
     }
 }

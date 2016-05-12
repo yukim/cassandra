@@ -17,7 +17,8 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -28,7 +29,6 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.apache.cassandra.io.compress.BufferType;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.util.Rebufferer.BufferHolder;
-import org.apache.cassandra.utils.memory.BufferPool;
 
 public class RandomAccessReader extends RebufferingInputStream implements FileDataInput
 {
@@ -50,15 +50,15 @@ public class RandomAccessReader extends RebufferingInputStream implements FileDa
     final Rebufferer rebufferer;
     BufferHolder bufferHolder = Rebufferer.EMPTY;
 
-    protected RandomAccessReader(Rebufferer rebufferer)
+    /**
+     * Only created through Builder
+     *
+     * @param rebufferer Rebufferer to use
+     */
+    RandomAccessReader(Rebufferer rebufferer)
     {
         super(Rebufferer.EMPTY.buffer());
         this.rebufferer = rebufferer;
-    }
-
-    public static ByteBuffer allocateBuffer(int size, BufferType bufferType)
-    {
-        return BufferPool.get(size, bufferType).order(ByteOrder.BIG_ENDIAN);
     }
 
     /**
@@ -353,10 +353,15 @@ public class RandomAccessReader extends RebufferingInputStream implements FileDa
             return instantiateRebufferer(chunkReader(), limiter);
         }
 
-        public RebuffererFactory chunkReader()
+        private RebuffererFactory chunkReader()
         {
             if (compression != null)
-                return CompressedSegmentedFile.chunkReader(channel, compression, regions);
+            {
+                if (regions != null)
+                    return new CompressedChunkReader.Mmap(channel, compression, regions);
+                else
+                    return new CompressedChunkReader.Standard(channel, compression);
+            }
             if (regions != null)
                 return new MmapRebufferer(channel, -1, regions);
 

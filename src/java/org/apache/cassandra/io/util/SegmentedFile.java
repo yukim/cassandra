@@ -17,23 +17,17 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.File;
-import java.io.IOException;
+import java.util.Optional;
 
 import com.google.common.util.concurrent.RateLimiter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.io.compress.CompressedSequentialWriter;
-import org.apache.cassandra.io.sstable.Component;
-import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.sstable.IndexSummary;
-import org.apache.cassandra.io.sstable.IndexSummaryBuilder;
-import org.apache.cassandra.io.sstable.format.Version;
-import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
+import org.apache.cassandra.cache.ChunkCache;
+import org.apache.cassandra.io.compress.BufferType;
+import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.utils.CLibrary;
+import org.apache.cassandra.utils.concurrent.Ref;
 import org.apache.cassandra.utils.concurrent.RefCounted;
 import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
 
@@ -48,8 +42,10 @@ import static org.apache.cassandra.utils.Throwables.maybeFail;
  * would need to be longer than 2GB, that segment will not be mmap'd, and a new RandomAccessFile will be created for
  * each access to that segment.
  */
-public abstract class SegmentedFile extends SharedCloseableImpl
+public class SegmentedFile extends SharedCloseableImpl
 {
+    private static final Logger logger = LoggerFactory.getLogger(SegmentedFile.class);
+
     public final ChannelProxy channel;
 
     // This differs from length for compressed files (but we still need length for
@@ -61,11 +57,21 @@ public abstract class SegmentedFile extends SharedCloseableImpl
      */
     private final RebuffererFactory rebufferer;
 
-    protected SegmentedFile(Cleanup cleanup, ChannelProxy channel, RebuffererFactory rebufferer, long onDiskLength)
+    /**
+     * Optional CompressionMetadata when dealing with compressed file
+     */
+    private final Optional<CompressionMetadata> compressionMetadata;
+
+    protected SegmentedFile(Cleanup cleanup,
+                            ChannelProxy channel,
+                            RebuffererFactory rebufferer,
+                            CompressionMetadata compressionMetadata,
+                            long onDiskLength)
     {
         super(cleanup);
         this.rebufferer = rebufferer;
         this.channel = channel;
+        this.compressionMetadata = Optional.ofNullable(compressionMetadata);
         this.onDiskLength = onDiskLength;
     }
 
@@ -74,6 +80,7 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         super(copy);
         channel = copy.channel;
         rebufferer = copy.rebufferer;
+        compressionMetadata = copy.compressionMetadata;
         onDiskLength = copy.onDiskLength;
     }
 
@@ -84,7 +91,7 @@ public abstract class SegmentedFile extends SharedCloseableImpl
 
     public long dataLength()
     {
-        return rebufferer.fileLength();
+        return compressionMetadata.map(c -> c.dataLength).orElseGet(rebufferer::fileLength);
     }
 
     public RebuffererFactory rebuffererFactory()
@@ -92,14 +99,34 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         return rebufferer;
     }
 
+    public Optional<CompressionMetadata> compressionMetadata()
+    {
+        return compressionMetadata;
+    }
+
+    @Override
+    public void addTo(Ref.IdentityCollection identities)
+    {
+        super.addTo(identities);
+        compressionMetadata.ifPresent(metadata -> metadata.addTo(identities));
+    }
+
     protected static class Cleanup implements RefCounted.Tidy
     {
         final ChannelProxy channel;
-        final ReaderFileProxy rebufferer;
-        protected Cleanup(ChannelProxy channel, ReaderFileProxy rebufferer)
+        final RebuffererFactory rebufferer;
+        final CompressionMetadata metadata;
+        final Optional<ChunkCache> chunkCache;
+
+        public Cleanup(ChannelProxy channel,
+                       RebuffererFactory rebufferer,
+                       CompressionMetadata metadata,
+                       ChunkCache chunkCache)
         {
             this.channel = channel;
             this.rebufferer = rebufferer;
+            this.metadata = metadata;
+            this.chunkCache = Optional.ofNullable(chunkCache);
         }
 
         public String name()
@@ -109,6 +136,11 @@ public abstract class SegmentedFile extends SharedCloseableImpl
 
         public void tidy()
         {
+            if (metadata != null)
+            {
+                chunkCache.ifPresent(cache -> cache.invalidateFile(name()));
+                metadata.close();
+            }
             try
             {
                 channel.close();
@@ -120,7 +152,10 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         }
     }
 
-    public abstract SegmentedFile sharedCopy();
+    public SegmentedFile sharedCopy()
+    {
+        return new SegmentedFile(this);
+    }
 
     public RandomAccessReader createReader()
     {
@@ -139,41 +174,109 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         return reader;
     }
 
+    /**
+     * Drop page cache from start to given {@code before}.
+     *
+     * @param before uncompressed position from start of the file to be dropped from cache. if 0, to end of file.
+     */
     public void dropPageCache(long before)
     {
-        CLibrary.trySkipCache(channel.getFileDescriptor(), 0, before, path());
-    }
-
-    /**
-     * @return A SegmentedFile.Builder.
-     */
-    public static Builder getBuilder(Config.DiskAccessMode mode, boolean compressed)
-    {
-        return compressed ? new CompressedSegmentedFile.Builder(null)
-                          : mode == Config.DiskAccessMode.mmap ? new MmappedSegmentedFile.Builder()
-                                                               : new BufferedSegmentedFile.Builder();
-    }
-
-    public static Builder getCompressedBuilder(CompressedSequentialWriter writer)
-    {
-        return new CompressedSegmentedFile.Builder(writer);
+        long position = compressionMetadata.map(metadata -> {
+            if (before >= metadata.dataLength)
+                return 0L;
+            else
+                return metadata.chunkFor(before).offset;
+        }).orElse(before);
+        CLibrary.trySkipCache(channel.getFileDescriptor(), 0, position, path());
     }
 
     /**
      * Collects potential segmentation points in an underlying file, and builds a SegmentedFile to represent it.
      */
-    public static abstract class Builder implements AutoCloseable
+    public static class Builder implements AutoCloseable
     {
         private ChannelProxy channel;
+        private CompressionMetadata compressionMetadata;
+        private MmappedRegions regions;
+        private ChunkCache chunkCache;
+
+        private boolean mmapped = false;
+        private boolean compressed = false;
+
+        public Builder compressed(boolean compressed)
+        {
+            this.compressed = compressed;
+            return this;
+        }
+
+        public Builder withChunkCache(ChunkCache chunkCache)
+        {
+            this.chunkCache = chunkCache;
+            return this;
+        }
+
+        public Builder withCompressionMetadata(CompressionMetadata metadata)
+        {
+            this.compressionMetadata = metadata;
+            return this;
+        }
+
+        public Builder mmapped(boolean mmapped)
+        {
+            this.mmapped = mmapped;
+            return this;
+        }
 
         /**
          * Called after all potential boundaries have been added to apply this Builder to a concrete file on disk.
          * @param channel The channel to the file on disk.
          */
-        protected abstract SegmentedFile complete(ChannelProxy channel, int bufferSize, long overrideLength);
+        protected SegmentedFile complete(ChannelProxy channel, int bufferSize, long overrideLength)
+        {
+            if (compressed && compressionMetadata == null)
+                compressionMetadata = CompressionMetadata.create(channel.filePath());
+
+            long length = overrideLength > 0 ? overrideLength : compressed ? compressionMetadata.compressedFileLength : channel.size();
+
+            RebuffererFactory rebuffererFactory;
+            if (mmapped)
+            {
+                if (compressed)
+                {
+                    regions = MmappedRegions.map(channel, compressionMetadata);
+                    rebuffererFactory = maybeCached(new CompressedChunkReader.Mmap(channel, compressionMetadata,
+                                                                                   regions));
+                }
+                else
+                {
+                    updateRegions(channel, length);
+                    rebuffererFactory = new MmapRebufferer(channel, length, regions.sharedCopy());
+                }
+            }
+            else
+            {
+                regions = null;
+                if (compressed)
+                {
+                    rebuffererFactory = maybeCached(new CompressedChunkReader.Standard(channel, compressionMetadata));
+                }
+                else
+                {
+                    rebuffererFactory = maybeCached(new SimpleChunkReader(channel, length, BufferType.OFF_HEAP,
+                                                                          bufferSize));
+                }
+            }
+            return new SegmentedFile(new Cleanup(channel, rebuffererFactory, compressionMetadata, chunkCache),
+                                     channel, rebuffererFactory, compressionMetadata, length);
+        }
+
+        public SegmentedFile complete(String path, int bufferSize)
+        {
+            return complete(path, bufferSize, -1L);
+        }
 
         @SuppressWarnings("resource") // SegmentedFile owns channel
-        private SegmentedFile complete(String path, int bufferSize, long overrideLength)
+        public SegmentedFile complete(String path, int bufferSize, long overrideLength)
         {
             ChannelProxy channelCopy = getChannel(path);
             try
@@ -187,98 +290,10 @@ public abstract class SegmentedFile extends SharedCloseableImpl
             }
         }
 
-        public SegmentedFile buildData(Descriptor desc, StatsMetadata stats, IndexSummaryBuilder.ReadableBoundary boundary)
-        {
-            return complete(desc.filenameFor(Component.DATA), bufferSize(stats), boundary.dataLength);
-        }
-
-        public SegmentedFile buildData(Descriptor desc, StatsMetadata stats)
-        {
-            return complete(desc.filenameFor(Component.DATA), bufferSize(stats), -1L);
-        }
-
-        public SegmentedFile buildIndex(Descriptor desc, IndexSummary indexSummary, IndexSummaryBuilder.ReadableBoundary boundary)
-        {
-            return complete(desc.filenameFor(Component.PRIMARY_INDEX), bufferSize(desc, indexSummary), boundary.indexLength);
-        }
-
-        public SegmentedFile buildIndex(Descriptor desc, IndexSummary indexSummary)
-        {
-            return complete(desc.filenameFor(Component.PRIMARY_INDEX), bufferSize(desc, indexSummary), -1L);
-        }
-
-        private static int bufferSize(StatsMetadata stats)
-        {
-            return bufferSize(stats.estimatedPartitionSize.percentile(DatabaseDescriptor.getDiskOptimizationEstimatePercentile()));
-        }
-
-        private static int bufferSize(Descriptor desc, IndexSummary indexSummary)
-        {
-            File file = new File(desc.filenameFor(Component.PRIMARY_INDEX));
-            return bufferSize(file.length() / indexSummary.size());
-        }
-
-        /**
-            Return the buffer size for a given record size. For spinning disks always add one page.
-            For solid state disks only add one page if the chance of crossing to the next page is more
-            than a predifined value, @see Config.disk_optimization_page_cross_chance.
-         */
-        static int bufferSize(long recordSize)
-        {
-            Config.DiskOptimizationStrategy strategy = DatabaseDescriptor.getDiskOptimizationStrategy();
-            if (strategy == Config.DiskOptimizationStrategy.ssd)
-            {
-                // The crossing probability is calculated assuming a uniform distribution of record
-                // start position in a page, so it's the record size modulo the page size divided by
-                // the total page size.
-                double pageCrossProbability = (recordSize % 4096) / 4096.;
-                // if the page cross probability is equal or bigger than disk_optimization_page_cross_chance we add one page
-                if ((pageCrossProbability - DatabaseDescriptor.getDiskOptimizationPageCrossChance()) > -1e-16)
-                    recordSize += 4096;
-
-                return roundBufferSize(recordSize);
-            }
-            else if (strategy == Config.DiskOptimizationStrategy.spinning)
-            {
-                return roundBufferSize(recordSize + 4096);
-            }
-            else
-            {
-                throw new IllegalStateException("Unsupported disk optimization strategy: " + strategy);
-            }
-        }
-
-        /**
-           Round up to the next multiple of 4k but no more than 64k
-         */
-        static int roundBufferSize(long size)
-        {
-            if (size <= 0)
-                return 4096;
-
-            size = (size + 4095) & ~4095;
-            return (int)Math.min(size, 1 << 16);
-        }
-
-        public void serializeBounds(DataOutput out, Version version) throws IOException
-        {
-            if (!version.hasBoundaries())
-                return;
-
-            out.writeUTF(DatabaseDescriptor.getDiskAccessMode().name());
-        }
-
-        public void deserializeBounds(DataInput in, Version version) throws IOException
-        {
-            if (!version.hasBoundaries())
-                return;
-
-            if (!in.readUTF().equals(DatabaseDescriptor.getDiskAccessMode().name()))
-                throw new IOException("Cannot deserialize SSTable Summary component because the DiskAccessMode was changed!");
-        }
-
         public Throwable close(Throwable accumulate)
         {
+            if (!compressed && regions != null)
+                accumulate = regions.close(accumulate);
             if (channel != null)
                 return channel.close(accumulate);
 
@@ -288,6 +303,30 @@ public abstract class SegmentedFile extends SharedCloseableImpl
         public void close()
         {
             maybeFail(close(null));
+        }
+
+        private RebuffererFactory maybeCached(ChunkReader reader)
+        {
+            if (chunkCache != null && chunkCache.capacity() > 0)
+                return chunkCache.wrap(reader);
+            return reader;
+        }
+
+        private void updateRegions(ChannelProxy channel, long length)
+        {
+            if (regions != null && !regions.isValid(channel))
+            {
+                Throwable err = regions.close(null);
+                if (err != null)
+                    logger.error("Failed to close mapped regions", err);
+
+                regions = null;
+            }
+
+            if (regions == null)
+                regions = MmappedRegions.map(channel, length);
+            else
+                regions.extend(length);
         }
 
         private ChannelProxy getChannel(String path)

@@ -20,77 +20,10 @@ package org.apache.cassandra.io.util;
 import java.io.File;
 import java.io.IOException;
 
-import org.apache.cassandra.io.compress.BufferType;
-import org.apache.cassandra.io.util.DataIntegrityMetadata.ChecksumValidator;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ChecksumType;
 
 public class ChecksummedRandomAccessReader
 {
-    @SuppressWarnings("serial")
-    public static class CorruptFileException extends RuntimeException
-    {
-        public final String filePath;
-
-        public CorruptFileException(Exception cause, String filePath)
-        {
-            super(cause);
-            this.filePath = filePath;
-        }
-    }
-
-    static class ChecksummedRebufferer extends BufferManagingRebufferer
-    {
-        private final DataIntegrityMetadata.ChecksumValidator validator;
-
-        public ChecksummedRebufferer(ChannelProxy channel, ChecksumValidator validator)
-        {
-            super(new SimpleChunkReader(channel, channel.size(), BufferType.ON_HEAP, validator.chunkSize));
-            this.validator = validator;
-        }
-
-        @Override
-        public BufferHolder rebuffer(long desiredPosition)
-        {
-            if (desiredPosition != offset + buffer.position())
-                validator.seek(desiredPosition);
-
-            // align with buffer size, as checksums were computed in chunks of buffer size each.
-            offset = alignedPosition(desiredPosition);
-            source.readChunk(offset, buffer);
-
-            try
-            {
-                validator.validate(ByteBufferUtil.getArray(buffer), 0, buffer.remaining());
-            }
-            catch (IOException e)
-            {
-                throw new CorruptFileException(e, channel().filePath());
-            }
-
-            return this;
-        }
-
-        @Override
-        public void close()
-        {
-            try
-            {
-                source.close();
-            }
-            finally
-            {
-                validator.close();
-            }
-        }
-
-        @Override
-        long alignedPosition(long desiredPosition)
-        {
-            return (desiredPosition / buffer.capacity()) * buffer.capacity();
-        }
-    }
-
     public static final class Builder extends RandomAccessReader.Builder
     {
         private final DataIntegrityMetadata.ChecksumValidator validator;
