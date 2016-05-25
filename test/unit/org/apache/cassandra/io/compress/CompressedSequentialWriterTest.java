@@ -33,14 +33,10 @@ import org.junit.Test;
 import junit.framework.Assert;
 
 import org.apache.cassandra.db.ClusteringComparator;
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
-import org.apache.cassandra.io.util.ChannelProxy;
-import org.apache.cassandra.io.util.DataPosition;
-import org.apache.cassandra.io.util.RandomAccessReader;
-import org.apache.cassandra.io.util.SequentialWriterTest;
+import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.utils.ChecksumType;
 
@@ -84,40 +80,38 @@ public class CompressedSequentialWriterTest extends SequentialWriterTest
     private void testWrite(File f, int bytesToTest) throws IOException
     {
         final String filename = f.getAbsolutePath();
-        final ChannelProxy channel = new ChannelProxy(f);
+        MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(Collections.singletonList(BytesType.instance)));
 
-        try
+        byte[] dataPre = new byte[bytesToTest];
+        byte[] rawPost = new byte[bytesToTest];
+        try (CompressedSequentialWriter writer = new CompressedSequentialWriter(f, filename + ".metadata", compressionParameters, sstableMetadataCollector);)
         {
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(Arrays.<AbstractType<?>>asList(BytesType.instance)));
+            Random r = new Random(42);
 
-            byte[] dataPre = new byte[bytesToTest];
-            byte[] rawPost = new byte[bytesToTest];
-            try (CompressedSequentialWriter writer = new CompressedSequentialWriter(f, filename + ".metadata", compressionParameters, sstableMetadataCollector);)
+            // Test both write with byte[] and ByteBuffer
+            r.nextBytes(dataPre);
+            r.nextBytes(rawPost);
+            ByteBuffer dataPost = makeBB(bytesToTest);
+            dataPost.put(rawPost);
+            dataPost.flip();
+
+            writer.write(dataPre);
+            DataPosition mark = writer.mark();
+
+            // Write enough garbage to transition chunk
+            for (int i = 0; i < CompressionParams.DEFAULT_CHUNK_LENGTH; i++)
             {
-                Random r = new Random(42);
-
-                // Test both write with byte[] and ByteBuffer
-                r.nextBytes(dataPre);
-                r.nextBytes(rawPost);
-                ByteBuffer dataPost = makeBB(bytesToTest);
-                dataPost.put(rawPost);
-                dataPost.flip();
-
-                writer.write(dataPre);
-                DataPosition mark = writer.mark();
-
-                // Write enough garbage to transition chunk
-                for (int i = 0; i < CompressionParams.DEFAULT_CHUNK_LENGTH; i++)
-                {
-                    writer.write((byte)i);
-                }
-                writer.resetAndTruncate(mark);
-                writer.write(dataPost);
-                writer.finish();
+                writer.write((byte)i);
             }
+            writer.resetAndTruncate(mark);
+            writer.write(dataPost);
+            writer.finish();
+        }
 
-            assert f.exists();
-            RandomAccessReader reader = RandomAccessReader.builder(channel).compression(new CompressionMetadata(filename + ".metadata", f.length(), ChecksumType.CRC32)).build();
+        assert f.exists();
+        try (FileHandle.Builder builder = new FileHandle.Builder(filename).withCompressionMetadata(new CompressionMetadata(filename + ".metadata", f.length(), ChecksumType.CRC32));
+             RandomAccessReader reader = builder.complete().createReader())
+        {
             assertEquals(dataPre.length + rawPost.length, reader.length());
             byte[] result = new byte[(int)reader.length()];
 
@@ -133,9 +127,6 @@ public class CompressedSequentialWriterTest extends SequentialWriterTest
         }
         finally
         {
-            // cleanup
-            channel.close();
-
             if (f.exists())
                 f.delete();
             File metadata = new File(f + ".metadata");

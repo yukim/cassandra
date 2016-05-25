@@ -22,32 +22,16 @@ import java.io.IOException;
 
 import org.apache.cassandra.utils.ChecksumType;
 
-public class ChecksummedRandomAccessReader
+public final class ChecksummedRandomAccessReader
 {
-    public static final class Builder extends RandomAccessReader.Builder
+    public static RandomAccessReader open(File file, File crcFile) throws IOException
     {
-        private final DataIntegrityMetadata.ChecksumValidator validator;
-
-        @SuppressWarnings("resource")
-        public Builder(File file, File crcFile) throws IOException
-        {
-            super(new ChannelProxy(file));
-            this.validator = new DataIntegrityMetadata.ChecksumValidator(ChecksumType.CRC32,
-                                                                         RandomAccessReader.open(crcFile),
-                                                                         file.getPath());
-        }
-
-        @Override
-        protected Rebufferer createRebufferer()
-        {
-            return new ChecksummedRebufferer(channel, validator);
-        }
-
-        @Override
-        public RandomAccessReader build()
-        {
-            // Always own and close the channel.
-            return buildWithChannel();
-        }
+        ChannelProxy channel = new ChannelProxy(file);
+        DataIntegrityMetadata.ChecksumValidator validator = new DataIntegrityMetadata.ChecksumValidator(ChecksumType.CRC32,
+                                                                     RandomAccessReader.open(crcFile),
+                                                                     file.getPath());
+        Rebufferer rebufferer = new ChecksummedRebufferer(channel, validator);
+        // Always own and close the channel.
+        return new RandomAccessReader.RandomAccessReaderWithOwnChannel(rebufferer);
     }
 }

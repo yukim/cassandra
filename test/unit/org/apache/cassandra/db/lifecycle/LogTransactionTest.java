@@ -52,8 +52,7 @@ import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.RandomAccessReader;
-import org.apache.cassandra.io.util.SegmentedFile;
+import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.utils.AlwaysPresentFilter;
 import org.apache.cassandra.utils.concurrent.AbstractTransactionalTest;
 import org.apache.cassandra.utils.concurrent.Transactional;
@@ -1168,8 +1167,8 @@ public class LogTransactionTest extends AbstractTransactionalTest
             }
         }
 
-        SegmentedFile dFile = new SegmentedFile.Builder().complete(descriptor.filenameFor(Component.DATA), RandomAccessReader.DEFAULT_BUFFER_SIZE, 0);
-        SegmentedFile iFile = new SegmentedFile.Builder().complete(descriptor.filenameFor(Component.PRIMARY_INDEX), RandomAccessReader.DEFAULT_BUFFER_SIZE, 0);
+        FileHandle dFile = new FileHandle.Builder(descriptor.filenameFor(Component.DATA)).complete();
+        FileHandle iFile = new FileHandle.Builder(descriptor.filenameFor(Component.PRIMARY_INDEX)).complete();
 
         SerializationHeader header = SerializationHeader.make(cfs.metadata, Collections.emptyList());
         StatsMetadata metadata = (StatsMetadata) new MetadataCollector(cfs.metadata.comparator)

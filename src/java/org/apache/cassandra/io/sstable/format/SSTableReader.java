@@ -193,8 +193,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     public final UniqueIdentifier instanceId = new UniqueIdentifier();
 
     // indexfile and datafile: might be null before a call to load()
-    protected SegmentedFile ifile;
-    protected SegmentedFile dfile;
+    protected FileHandle ifile;
+    protected FileHandle dfile;
     protected IndexSummary indexSummary;
     protected IFilter bf;
 
@@ -433,11 +433,10 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                                              OpenReason.NORMAL,
                                              header == null? null : header.toHeader(metadata));
 
-        // special implementation of load to use non-pooled SegmentedFile builders
-        try(SegmentedFile.Builder ibuilder = new SegmentedFile.Builder()
+        try(FileHandle.Builder ibuilder = new FileHandle.Builder(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX))
                                                      .mmapped(DatabaseDescriptor.getIndexAccessMode() == Config.DiskAccessMode.mmap)
                                                      .withChunkCache(ChunkCache.instance);
-            SegmentedFile.Builder dbuilder = new SegmentedFile.Builder().compressed(sstable.compression)
+            FileHandle.Builder dbuilder = new FileHandle.Builder(sstable.descriptor.filenameFor(Component.DATA)).compressed(sstable.compression)
                                                      .mmapped(DatabaseDescriptor.getDiskAccessMode() == Config.DiskAccessMode.mmap)
                                                      .withChunkCache(ChunkCache.instance))
         {
@@ -446,10 +445,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             long indexFileLength = new File(descriptor.filenameFor(Component.PRIMARY_INDEX)).length();
             int dataBufferSize = sstable.optimizationStrategy.bufferSize(statsMetadata.estimatedPartitionSize.percentile(DatabaseDescriptor.getDiskOptimizationEstimatePercentile()));
             int indexBufferSize = sstable.optimizationStrategy.bufferSize(indexFileLength / sstable.indexSummary.size());
-            sstable.ifile = ibuilder.complete(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX),
-                                              sstable.optimizationStrategy.bufferSize(indexBufferSize));
-            sstable.dfile = dbuilder.complete(sstable.descriptor.filenameFor(Component.DATA),
-                                              sstable.optimizationStrategy.bufferSize(dataBufferSize));
+            sstable.ifile = ibuilder.bufferSize(sstable.optimizationStrategy.bufferSize(indexBufferSize)).complete();
+            sstable.dfile = dbuilder.bufferSize(sstable.optimizationStrategy.bufferSize(dataBufferSize)).complete();
             sstable.bf = FilterFactory.AlwaysPresent;
             sstable.setup(false);
             return sstable;
@@ -588,8 +585,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     public static SSTableReader internalOpen(Descriptor desc,
                                       Set<Component> components,
                                       CFMetaData metadata,
-                                      SegmentedFile ifile,
-                                      SegmentedFile dfile,
+                                      FileHandle ifile,
+                                      FileHandle dfile,
                                       IndexSummary isummary,
                                       IFilter bf,
                                       long maxDataAge,
@@ -740,10 +737,10 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      */
     private void load(boolean recreateBloomFilter, boolean saveSummaryIfCreated) throws IOException
     {
-        try(SegmentedFile.Builder ibuilder = new SegmentedFile.Builder()
+        try(FileHandle.Builder ibuilder = new FileHandle.Builder(descriptor.filenameFor(Component.PRIMARY_INDEX))
                                                      .mmapped(DatabaseDescriptor.getIndexAccessMode() == Config.DiskAccessMode.mmap)
                                                      .withChunkCache(ChunkCache.instance);
-            SegmentedFile.Builder dbuilder = new SegmentedFile.Builder().compressed(compression)
+            FileHandle.Builder dbuilder = new FileHandle.Builder(descriptor.filenameFor(Component.DATA)).compressed(compression)
                                                      .mmapped(DatabaseDescriptor.getDiskAccessMode() == Config.DiskAccessMode.mmap)
                                                      .withChunkCache(ChunkCache.instance))
         {
@@ -761,10 +758,10 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             if (components.contains(Component.PRIMARY_INDEX))
             {
                 int indexBufferSize = optimizationStrategy.bufferSize(indexFileLength / indexSummary.size());
-                ifile = ibuilder.complete(descriptor.filenameFor(Component.PRIMARY_INDEX), indexBufferSize);
+                ifile = ibuilder.bufferSize(indexBufferSize).complete();
             }
 
-            dfile = dbuilder.complete(descriptor.filenameFor(Component.DATA), dataBufferSize);
+            dfile = dbuilder.bufferSize(dataBufferSize).complete();
 
             if (saveSummaryIfCreated && builtSummary)
                 saveSummary();
@@ -1055,13 +1052,13 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     private static class DropPageCache implements Runnable
     {
-        final SegmentedFile dfile;
+        final FileHandle dfile;
         final long dfilePosition;
-        final SegmentedFile ifile;
+        final FileHandle ifile;
         final long ifilePosition;
         final Runnable andThen;
 
-        private DropPageCache(SegmentedFile dfile, long dfilePosition, SegmentedFile ifile, long ifilePosition, Runnable andThen)
+        private DropPageCache(FileHandle dfile, long dfilePosition, FileHandle ifile, long ifilePosition, Runnable andThen)
         {
             this.dfile = dfile;
             this.dfilePosition = dfilePosition;
@@ -1950,7 +1947,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         return ifile.channel;
     }
 
-    public SegmentedFile getIndexFile()
+    public FileHandle getIndexFile()
     {
         return ifile;
     }
@@ -2087,8 +2084,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         private IFilter bf;
         private IndexSummary summary;
 
-        private SegmentedFile dfile;
-        private SegmentedFile ifile;
+        private FileHandle dfile;
+        private FileHandle ifile;
         private Runnable runOnClose;
         private boolean isReplaced = false;
 

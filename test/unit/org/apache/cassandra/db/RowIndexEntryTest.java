@@ -61,7 +61,7 @@ import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.io.util.SegmentedFile;
+import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.serializers.LongSerializer;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -807,7 +807,7 @@ public class RowIndexEntryTest extends CQLTester
 
         RowIndexEntry rie = new RowIndexEntry(0L)
         {
-            public IndexInfoRetriever openWithIndex(SegmentedFile indexFile)
+            public IndexInfoRetriever openWithIndex(FileHandle indexFile)
             {
                 return new IndexInfoRetriever()
                 {

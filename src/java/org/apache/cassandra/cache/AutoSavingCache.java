@@ -86,7 +86,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
     {
         public InputStream getInputStream(File dataPath, File crcPath) throws IOException
         {
-            return new ChecksummedRandomAccessReader.Builder(dataPath, crcPath).build();
+            return ChecksummedRandomAccessReader.open(dataPath, crcPath);
         }
 
         public OutputStream getOutputStream(File dataPath, File crcPath)

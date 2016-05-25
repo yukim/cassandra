@@ -352,8 +352,7 @@ public class CommitLogReplayer
         // just transform from the file name (no reading of headers) to determine version
         CommitLogDescriptor desc = CommitLogDescriptor.fromFileName(file.getName());
 
-        try(ChannelProxy channel = new ChannelProxy(file);
-            RandomAccessReader reader = RandomAccessReader.open(channel))
+        try (RandomAccessReader reader = RandomAccessReader.open(file))
         {
             if (desc.version < CommitLogDescriptor.VERSION_21)
             {

@@ -22,7 +22,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-public class SegmentedFileTest
+public class DiskOptimizationStrategyTest
 {
     @Test
     public void testRoundingBufferSize()
