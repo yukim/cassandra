@@ -188,7 +188,7 @@ public class CompactionManager implements CompactionManagerMBean
     public boolean isCompacting(Iterable<ColumnFamilyStore> cfses)
     {
         for (ColumnFamilyStore cfs : cfses)
-            if (!cfs.getTracker().getCompacting().isEmpty())
+            if (!cfs.getTracker().getCompacting().isEmpty() || compactingCF.contains(cfs))
                 return true;
         return false;
     }
@@ -1701,16 +1701,26 @@ public class CompactionManager implements CompactionManagerMBean
         interruptCompactionFor(metadata, interruptValidation);
     }
 
-    public void waitForCessation(Iterable<ColumnFamilyStore> cfss)
+    /**
+     * Wait until given CFSes stop compacting.
+     * If compactions does not stop within given time, then this throws TimeoutException.
+     *
+     * @param cfss CFSes to check. Those CFSes' compacion should be paused/disabled before calliing.
+     * @throws TimeoutException when compactions for given CFSes are not stopped by given time
+     */
+    public void waitForCessation(Iterable<ColumnFamilyStore> cfss, long time, TimeUnit unit) throws TimeoutException
     {
         long start = System.nanoTime();
-        long delay = TimeUnit.MINUTES.toNanos(1);
+        long delay = unit.toNanos(time);
         while (System.nanoTime() - start < delay)
         {
-            if (CompactionManager.instance.isCompacting(cfss))
+            if (isCompacting(cfss))
                 Uninterruptibles.sleepUninterruptibly(1, TimeUnit.MILLISECONDS);
             else
-                break;
+                return;
         }
+        throw new TimeoutException(String.format("Unable to stop compaction for %s in %d seconds",
+                                                 Iterables.toString(cfss),
+                                                 TimeUnit.NANOSECONDS.toSeconds(delay)));
     }
 }

@@ -4,6 +4,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -650,7 +652,14 @@ public abstract class CassandraIndex implements Index
         // interrupt in-progress compactions
         Collection<ColumnFamilyStore> cfss = Collections.singleton(indexCfs);
         CompactionManager.instance.interruptCompactionForCFs(cfss, true);
-        CompactionManager.instance.waitForCessation(cfss);
+        try
+        {
+            CompactionManager.instance.waitForCessation(cfss, 1, TimeUnit.MINUTES);
+        }
+        catch (TimeoutException e)
+        {
+            logger.warn("Time out waiting for compaction to stop", e);
+        }
         Keyspace.writeOrder.awaitNewBarrier();
         indexCfs.forceBlockingFlush();
         indexCfs.readOrdering.awaitNewBarrier();

@@ -2064,7 +2064,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             {
                 // interrupt in-progress compactions
                 CompactionManager.instance.interruptCompactionForCFs(selfWithAuxiliaryCfs, interruptValidation);
-                CompactionManager.instance.waitForCessation(selfWithAuxiliaryCfs);
+                CompactionManager.instance.waitForCessation(selfWithAuxiliaryCfs, 1, TimeUnit.MINUTES);
 
                 // doublecheck that we finished, instead of timing out
                 for (ColumnFamilyStore cfs : selfWithAuxiliaryCfs)
@@ -2086,6 +2086,11 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 {
                     throw new RuntimeException(e);
                 }
+            }
+            catch (TimeoutException e)
+            {
+                logger.warn("Time out waiting for compaction to stop", e);
+                return null;
             }
             finally
             {
