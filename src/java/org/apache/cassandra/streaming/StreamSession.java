@@ -246,11 +246,6 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     {
         this.streamResult = streamResult;
         StreamHook.instance.reportStreamFuture(this, streamResult);
-
-        if (isKeepAliveSupported())
-            scheduleKeepAliveTask();
-        else
-            logger.debug("Peer {} does not support keep-alive.", peer);
     }
 
     public void start()
@@ -542,6 +537,11 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      */
     public void onInitializationComplete()
     {
+        if (isKeepAliveSupported())
+            scheduleKeepAliveTask();
+        else
+            logger.debug("Peer {} does not support keep-alive.", peer);
+
         // send prepare message
         state(State.PREPARING);
         PrepareMessage prepare = new PrepareMessage();
