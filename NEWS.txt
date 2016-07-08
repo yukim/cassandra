@@ -39,6 +39,9 @@ New features
      the data/cdc_raw directory until removed by the user and writes to CDC-enabled tables
      will be rejected with a WriteTimeoutException once cdc_total_space_in_mb is reached
      between unflushed CommitLogSegments and cdc_raw.
+   - Application layer keep-alives were added to the streaming protocol to prevent idle incoming connections from
+     timing out and failing the stream session (CASSANDRA-11839). This effectively deprecates the streaming_socket_timeout_in_ms
+     property in favor of streaming_keep_alive_period_in_secs. See cassandra.yaml for more details about this property.
 
 Upgrading
 ---------
