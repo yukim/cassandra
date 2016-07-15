@@ -22,8 +22,10 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.StandardOpenOption;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.SyncUtil;
 import org.apache.cassandra.utils.concurrent.Transactional;
 
@@ -35,6 +37,8 @@ import static org.apache.cassandra.utils.Throwables.merge;
  */
 public class SequentialWriter extends BufferedDataOutputStreamPlus implements Transactional
 {
+    private static final long CACHE_FLUSH_INTERVAL_IN_BYTES = (long) Math.pow(2, 27); // 128mb
+
     // absolute path to the given file
     private final String filePath;
 
@@ -47,6 +51,8 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     // latency spikes
     private final SequentialWriterOption option;
     private int bytesSinceTrickleFsync = 0;
+    // used if skip I/O cache was enabled
+    private long ioCacheStartOffset = 0, bytesSinceCacheFlush = 0;
 
     protected long lastFlushOffset;
 
@@ -197,6 +203,23 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
             {
                 syncDataOnlyInternal();
                 bytesSinceTrickleFsync = 0;
+            }
+        }
+
+        // enable page cache eviciton when early opening is disabled
+        if (DatabaseDescriptor.getSSTablePreempiveOpenIntervalInMB() < 0)
+        {
+            // we don't know when the data reaches disk since we aren't
+            // calling flush
+            // so we continue to clear pages we don't need from the first
+            // offset we see
+            // periodically we update this starting offset
+            bytesSinceCacheFlush += buffer.position();
+            if (bytesSinceCacheFlush >= CACHE_FLUSH_INTERVAL_IN_BYTES)
+            {
+                CLibrary.trySkipCache(CLibrary.getfd(fchannel), ioCacheStartOffset, 0, filePath);
+                ioCacheStartOffset = bufferOffset;
+                bytesSinceCacheFlush = 0;
             }
         }
 
