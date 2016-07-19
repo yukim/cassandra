@@ -2272,6 +2272,20 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         }
     }
 
+    public void preheat(Map<DecoratedKey, RowIndexEntry> cachedKeys) throws IOException
+    {
+        try (RandomAccessFile f = new RandomAccessFile(getFilename(), "r"))
+        {
+            int fd = CLibrary.getfd(f.getFD());
+            for (Map.Entry<DecoratedKey, RowIndexEntry> entry : cachedKeys.entrySet())
+            {
+                cacheKey(entry.getKey(), entry.getValue());
+                if (fd > 0)
+                    CLibrary.preheatPage(fd, entry.getValue().position);
+            }
+        }
+    }
+
     @VisibleForTesting
     public static void resetTidying()
     {

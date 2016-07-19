@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.io.sstable;
 
+import java.io.IOError;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.*;
 
@@ -388,6 +390,22 @@ public class SSTableRewriter extends Transactional.AbstractTransactional impleme
 
         if (!keepOriginals)
             transaction.obsoleteOriginals();
+
+        // preheat page cache when early opening is disabled
+        if (preemptiveOpenInterval == Long.MAX_VALUE)
+        {
+            for (SSTableReader sstable : preparedForCommit)
+            {
+                try
+                {
+                    sstable.preheat(cachedKeys);
+                }
+                catch (IOException ex)
+                {
+                    throw new IOError(ex);
+                }
+            }
+        }
 
         transaction.prepareToCommit();
     }
