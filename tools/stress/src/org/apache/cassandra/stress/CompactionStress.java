@@ -112,8 +112,6 @@ public abstract class CompactionStress implements Runnable
 
     ColumnFamilyStore initCf(StressProfile stressProfile, boolean loadSSTables)
     {
-        Util.initDatabaseDescriptor();
-
         generateTokens(stressProfile.seedStr, StorageService.instance.getTokenMetadata(), numTokens);
 
         CreateTableStatement.RawStatement createStatement = stressProfile.getCreateStatement();
@@ -341,6 +339,8 @@ public abstract class CompactionStress implements Runnable
 
     public static void main(String[] args)
     {
+        Util.initDatabaseDescriptor();
+
         Cli.CliBuilder<Runnable> builder = Cli.<Runnable>builder("compaction-stress")
                                            .withDescription("benchmark for compaction")
                                            .withDefaultCommand(Help.class)
