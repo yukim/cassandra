@@ -1186,7 +1186,7 @@ public class StorageProxy implements StorageProxyMBean
     throws OverloadedException
     {
         // extra-datacenter replicas, grouped by dc
-        Map<String, Collection<InetAddress>> dcGroups = null;
+        Map<String, List<InetAddress>> dcGroups = null;
         // only need to create a Message for non-local writes
         MessageOut<Mutation> message = null;
 
@@ -1217,7 +1217,7 @@ public class StorageProxy implements StorageProxyMBean
                     }
                     else
                     {
-                        Collection<InetAddress> messages = (dcGroups != null) ? dcGroups.get(dc) : null;
+                        List<InetAddress> messages = (dcGroups != null) ? dcGroups.get(dc) : null;
                         if (messages == null)
                         {
                             messages = new ArrayList<>(3); // most DCs will have <= 3 replicas
@@ -1252,7 +1252,7 @@ public class StorageProxy implements StorageProxyMBean
             if (message == null)
                 message = mutation.createMessage();
 
-            for (Collection<InetAddress> dcTargets : dcGroups.values())
+            for (List<InetAddress> dcTargets : dcGroups.values())
                 sendMessagesToNonlocalDC(message, dcTargets, responseHandler);
         }
     }
@@ -1274,9 +1274,11 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     private static void sendMessagesToNonlocalDC(MessageOut<? extends IMutation> message,
-                                                 Collection<InetAddress> targets,
+                                                 List<InetAddress> targets,
                                                  AbstractWriteResponseHandler<IMutation> handler)
     {
+        // try not to send mutation to the same node every time
+        Collections.shuffle(targets);
         Iterator<InetAddress> iter = targets.iterator();
         InetAddress target = iter.next();
 
