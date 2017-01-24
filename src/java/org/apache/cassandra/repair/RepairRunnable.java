@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -224,12 +225,12 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         }
 
         // Set up RepairJob executor for this repair command.
-        final ListeningExecutorService executor = MoreExecutors.listeningDecorator(new JMXConfigurableThreadPoolExecutor(options.getJobThreads(),
-                                                                                                                         Integer.MAX_VALUE,
-                                                                                                                         TimeUnit.SECONDS,
-                                                                                                                         new LinkedBlockingQueue<Runnable>(),
-                                                                                                                         new NamedThreadFactory("Repair#" + cmd),
-                                                                                                                         "internal"));
+        final ThreadPoolExecutor executor = new JMXConfigurableThreadPoolExecutor(options.getJobThreads(),
+                                                                                  Integer.MAX_VALUE,
+                                                                                  TimeUnit.SECONDS,
+                                                                                  new LinkedBlockingQueue<Runnable>(),
+                                                                                  new NamedThreadFactory("Repair#" + cmd),
+                                                                                  "internal");
 
         List<ListenableFuture<RepairSessionResult>> futures = new ArrayList<>(options.getRanges().size());
         for (Pair<Set<InetAddress>, ? extends Collection<Range<Token>>> p : commonRanges)
