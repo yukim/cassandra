@@ -135,7 +135,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                                              RepairParallelism parallelismDegree,
                                              Set<InetAddress> endpoints,
                                              long repairedAt,
-                                             ListeningExecutorService executor,
+                                             final ThreadPoolExecutor executor,
                                              String... cfnames)
     {
         if (endpoints.isEmpty())
@@ -158,6 +158,8 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
              */
             public void run()
             {
+                // remove all cacelled repair jobs
+                session.cleanupJobs(executor);
                 sessions.remove(session.getId());
             }
         }, MoreExecutors.sameThreadExecutor());

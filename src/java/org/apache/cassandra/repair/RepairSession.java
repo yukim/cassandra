@@ -20,10 +20,13 @@ package org.apache.cassandra.repair;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.*;
 import org.slf4j.Logger;
@@ -93,6 +96,8 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
 
     private final AtomicBoolean isFailed = new AtomicBoolean(false);
 
+    private final List<RepairJob> jobs;
+
     // Each validation task waits response from replica in validating ConcurrentMap (keyed by CF name and endpoint address)
     private final ConcurrentMap<Pair<RepairJobDesc, InetAddress>, ValidationTask> validating = new ConcurrentHashMap<>();
     // Remote syncing jobs wait response in syncingTasks map
@@ -134,6 +139,15 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         this.range = range;
         this.endpoints = endpoints;
         this.repairedAt = repairedAt;
+
+        // Build necessary repair jobs
+        ImmutableList.Builder<RepairJob> builder = ImmutableList.builder();
+        for (String cfname : cfnames)
+        {
+            RepairJob job = new RepairJob(this, cfname, parallelismDegree, repairedAt, taskExecutor);
+            builder.add(job);
+        }
+        jobs = builder.build();
     }
 
     public UUID getId()
@@ -208,14 +222,14 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     }
 
     /**
-     * Start RepairJob on given ColumnFamilies.
+     * Start RepairJob on given tables.
      *
      * This first validates if all replica are available, and if they are,
-     * creates RepairJobs and submit to run on given executor.
+     * submit RepairJobs to run on given executor.
      *
-     * @param executor Executor to run validation
+     * @param executor Executor to run repair jobs
      */
-    public void start(ListeningExecutorService executor)
+    public void start(ThreadPoolExecutor executor)
     {
         String message;
         if (terminated)
@@ -223,7 +237,9 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
 
         logger.info(String.format("[repair #%s] new session: will sync %s on range %s for %s.%s", getId(), repairedNodes(), range, keyspace, Arrays.toString(cfnames)));
         Tracing.traceRepair("Syncing range {}", range);
-        SystemDistributedKeyspace.startRepairs(getId(), parentRepairSession, keyspace, cfnames, range, endpoints);
+        // check if the node is online for testing purpose
+        if (DatabaseDescriptor.isDaemonInitialized())
+            SystemDistributedKeyspace.startRepairs(getId(), parentRepairSession, keyspace, cfnames, range, endpoints);
 
         if (endpoints.isEmpty())
         {
@@ -248,15 +264,6 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
             }
         }
 
-        // Create and submit RepairJob for each ColumnFamily
-        List<ListenableFuture<RepairResult>> jobs = new ArrayList<>(cfnames.length);
-        for (String cfname : cfnames)
-        {
-            RepairJob job = new RepairJob(this, cfname, parallelismDegree, repairedAt, taskExecutor);
-            executor.execute(job);
-            jobs.add(job);
-        }
-
         // When all RepairJobs are done without error, cleanup and set the final result
         Futures.addCallback(Futures.allAsList(jobs), new FutureCallback<List<RepairResult>>()
         {
@@ -279,6 +286,12 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
                 forceShutdown(t);
             }
         });
+
+        // submit RepairJobs to job executor
+        for (RepairJob job : jobs)
+        {
+            executor.execute(job);
+        }
     }
 
     public void terminate()
@@ -298,6 +311,17 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         setException(reason);
         taskExecutor.shutdownNow();
         terminate();
+    }
+
+    /**
+     * Remove queued repair jobs from given executor.
+     *
+     * @param executor Repair job executor
+     */
+    public void cleanupJobs(ThreadPoolExecutor executor)
+    {
+        for (RepairJob job : jobs)
+            executor.remove(job);
     }
 
     public void onJoin(InetAddress endpoint, EndpointState epState) {}
