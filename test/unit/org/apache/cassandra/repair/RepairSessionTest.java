@@ -20,10 +20,10 @@ package org.apache.cassandra.repair;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.*;
 
 import com.google.common.collect.Sets;
 import org.junit.Test;
@@ -38,6 +38,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.UUIDGen;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.fail;
 
 public class RepairSessionTest
@@ -54,8 +55,29 @@ public class RepairSessionTest
         IPartitioner p = Murmur3Partitioner.instance;
         Range<Token> repairRange = new Range<>(p.getToken(ByteBufferUtil.bytes(0)), p.getToken(ByteBufferUtil.bytes(100)));
         Set<InetAddress> endpoints = Sets.newHashSet(remote);
-        RepairSession session = new RepairSession(parentSessionId, sessionId, Arrays.asList(repairRange), "Keyspace1", RepairParallelism.SEQUENTIAL, endpoints, ActiveRepairService.UNREPAIRED_SSTABLE, "Standard1");
 
+        // Test queue that takes time to poll so that thread won't be created
+        BlockingQueue<Runnable> queue = new LinkedBlockingQueue<Runnable>()
+        {
+            public Runnable poll(long timeout, TimeUnit unit) throws InterruptedException
+            {
+                Thread.sleep(unit.toMillis(timeout));
+                return super.poll(timeout, unit);
+            }
+        };
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, Long.MAX_VALUE, TimeUnit.MINUTES, queue);
+
+        String[] repairJobs = {"Standard1", "Standard2", "Standard3", "Standard4"};
+        RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSessionId,
+                                                                                 Collections.singleton(repairRange),
+                                                                                 "Keyspace1",
+                                                                                 RepairParallelism.SEQUENTIAL,
+                                                                                 endpoints,
+                                                                                 0,
+                                                                                 executor,
+                                                                                 repairJobs);
+
+        assertEquals(repairJobs.length - 1, queue.size());
         // perform convict
         session.convict(remote, Double.MAX_VALUE);
 
@@ -67,7 +89,9 @@ public class RepairSessionTest
         }
         catch (ExecutionException ex)
         {
-            assertEquals(IOException.class, ex.getCause().getClass());
+            // Make sure forced termination clears repair job
+            assertEquals(0, queue.size());
+            assertSame(IOException.class, ex.getCause().getClass());
         }
     }
 }

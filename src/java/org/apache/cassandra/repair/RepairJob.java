@@ -35,7 +35,7 @@ import org.apache.cassandra.utils.Pair;
  */
 public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
 {
-    private static Logger logger = LoggerFactory.getLogger(RepairJob.class);
+    private final static Logger logger = LoggerFactory.getLogger(RepairJob.class);
 
     private final RepairSession session;
     private final RepairJobDesc desc;
@@ -281,5 +281,22 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
             taskExecutor.execute(firstTask);
         }
         return Futures.allAsList(tasks);
+    }
+
+    public boolean equals(Object o)
+    {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        RepairJob repairJob = (RepairJob) o;
+
+        return repairedAt == repairJob.repairedAt && desc.equals(repairJob.desc);
+    }
+
+    public int hashCode()
+    {
+        int result = desc.hashCode();
+        result = 31 * result + (int) (repairedAt ^ (repairedAt >>> 32));
+        return result;
     }
 }
