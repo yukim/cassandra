@@ -3310,7 +3310,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             parallelism = RepairParallelism.PARALLEL;
         }
 
-        RepairOption options = new RepairOption(parallelism, primaryRange, !fullRepair, false, 1, Collections.<Range<Token>>emptyList(), false, false);
+        RepairOption options = new RepairOption(parallelism, primaryRange, !fullRepair, false, 1, Collections.<Range<Token>>emptyList(), false, false, PreviewKind.NONE);
         if (dataCenters != null)
         {
             options.getDataCenters().addAll(dataCenters);
@@ -3402,7 +3402,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         "The repair will occur but without anti-compaction.");
         Collection<Range<Token>> repairingRange = createRepairRangeFrom(beginToken, endToken);
 
-        RepairOption options = new RepairOption(parallelism, false, !fullRepair, false, 1, repairingRange, true, false);
+        RepairOption options = new RepairOption(parallelism, false, !fullRepair, false, 1, repairingRange, true, false, PreviewKind.NONE);
         if (dataCenters != null)
         {
             options.getDataCenters().addAll(dataCenters);

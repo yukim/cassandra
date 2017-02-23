@@ -50,8 +50,9 @@ public class StreamInitMessage
     public final boolean keepSSTableLevel;
     public final boolean isIncremental;
     public final UUID pendingRepair;
+    public final boolean isPreview;
 
-    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair)
+    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair, boolean isPreview)
     {
         this.from = from;
         this.sessionIndex = sessionIndex;
@@ -61,6 +62,7 @@ public class StreamInitMessage
         this.keepSSTableLevel = keepSSTableLevel;
         this.isIncremental = isIncremental;
         this.pendingRepair = pendingRepair;
+        this.isPreview = isPreview;
     }
 
     /**
@@ -122,6 +124,7 @@ public class StreamInitMessage
             {
                 UUIDSerializer.serializer.serialize(message.pendingRepair, out, MessagingService.current_version);
             }
+            out.writeBoolean(message.isPreview);
         }
 
         public StreamInitMessage deserialize(DataInputPlus in, int version) throws IOException
@@ -135,7 +138,8 @@ public class StreamInitMessage
 
             boolean isIncremental = in.readBoolean();
             UUID pendingRepair = in.readBoolean() ? UUIDSerializer.serializer.deserialize(in, version) : null;
-            return new StreamInitMessage(from, sessionIndex, planId, description, sentByInitiator, keepSSTableLevel, isIncremental, pendingRepair);
+            boolean isPreview = in.readBoolean();
+            return new StreamInitMessage(from, sessionIndex, planId, description, sentByInitiator, keepSSTableLevel, isIncremental, pendingRepair, isPreview);
         }
 
         public long serializedSize(StreamInitMessage message, int version)
@@ -152,6 +156,7 @@ public class StreamInitMessage
             {
                 size += UUIDSerializer.serializer.serializedSize(message.pendingRepair, MessagingService.current_version);
             }
+            size += TypeSizes.sizeof(message.isPreview);
             return size;
         }
     }

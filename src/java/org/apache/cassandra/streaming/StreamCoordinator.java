@@ -50,9 +50,10 @@ public class StreamCoordinator
     private final boolean isIncremental;
     private Iterator<StreamSession> sessionsToConnect = null;
     private final UUID pendingRepair;
+    private final boolean isPreview;
 
     public StreamCoordinator(int connectionsPerHost, boolean keepSSTableLevel, boolean isIncremental,
-                             StreamConnectionFactory factory, boolean connectSequentially, UUID pendingRepair)
+                             StreamConnectionFactory factory, boolean connectSequentially, UUID pendingRepair, boolean isPreview)
     {
         this.connectionsPerHost = connectionsPerHost;
         this.factory = factory;
@@ -60,6 +61,7 @@ public class StreamCoordinator
         this.isIncremental = isIncremental;
         this.connectSequentially = connectSequentially;
         this.pendingRepair = pendingRepair;
+        this.isPreview = isPreview;
     }
 
     public void setConnectionFactory(StreamConnectionFactory factory)
@@ -290,7 +292,7 @@ public class StreamCoordinator
             // create
             if (streamSessions.size() < connectionsPerHost)
             {
-                StreamSession session = new StreamSession(peer, connecting, factory, streamSessions.size(), keepSSTableLevel, isIncremental, pendingRepair);
+                StreamSession session = new StreamSession(peer, connecting, factory, streamSessions.size(), keepSSTableLevel, isIncremental, pendingRepair, isPreview);
                 streamSessions.put(++lastReturned, session);
                 return session;
             }
@@ -322,7 +324,7 @@ public class StreamCoordinator
             StreamSession session = streamSessions.get(id);
             if (session == null)
             {
-                session = new StreamSession(peer, connecting, factory, id, keepSSTableLevel, isIncremental, pendingRepair);
+                session = new StreamSession(peer, connecting, factory, id, keepSSTableLevel, isIncremental, pendingRepair, isPreview);
                 streamSessions.put(id, session);
             }
             return session;

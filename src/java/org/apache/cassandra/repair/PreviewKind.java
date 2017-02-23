@@ -15,35 +15,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.cassandra.repair;
 
-import java.util.List;
-
-import org.apache.cassandra.streaming.SessionSummary;
-
-/**
- * Statistics about synchronizing two replica
- */
-public class SyncStat
+public enum PreviewKind
 {
-    public final NodePair nodes;
-    public final long numberOfDifferences; // TODO: revert to Range<Token>
-    public final List<SessionSummary> summaries;
+    NONE(0), UNREPAIRED(1), FULL(2), REPAIRED(3);
 
-    public SyncStat(NodePair nodes, long numberOfDifferences)
+    private final int serializationVal;
+
+    PreviewKind(int serializationVal)
     {
-        this(nodes, numberOfDifferences, null);
+        assert ordinal() == serializationVal;
+        this.serializationVal = serializationVal;
     }
 
-    public SyncStat(NodePair nodes, long numberOfDifferences, List<SessionSummary> summaries)
+    public int getSerializationVal()
     {
-        this.nodes = nodes;
-        this.numberOfDifferences = numberOfDifferences;
-        this.summaries = summaries;
+        return serializationVal;
     }
 
-    public SyncStat withSummaries(List<SessionSummary> summaries)
+    public static PreviewKind deserialize(int serializationVal)
     {
-        return new SyncStat(nodes, numberOfDifferences, summaries);
+        return values()[serializationVal];
     }
 }

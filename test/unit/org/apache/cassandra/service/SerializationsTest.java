@@ -20,10 +20,13 @@ package org.apache.cassandra.service;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
+import com.google.common.collect.Lists;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -43,8 +46,12 @@ import org.apache.cassandra.repair.NodePair;
 import org.apache.cassandra.repair.RepairJobDesc;
 import org.apache.cassandra.repair.Validator;
 import org.apache.cassandra.repair.messages.*;
+import org.apache.cassandra.schema.TableId;
+import org.apache.cassandra.streaming.SessionSummary;
+import org.apache.cassandra.streaming.StreamSummary;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MerkleTrees;
+import org.apache.cassandra.utils.UUIDGen;
 
 public class SerializationsTest extends AbstractSerializationsTester
 {
@@ -175,7 +182,7 @@ public class SerializationsTest extends AbstractSerializationsTester
         InetAddress local = InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
         InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
         InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
-        SyncRequest message = new SyncRequest(DESC, local, src, dest, Collections.singleton(FULL_RANGE));
+        SyncRequest message = new SyncRequest(DESC, local, src, dest, Collections.singleton(FULL_RANGE), false);
 
         testRepairMessageWrite("service.SyncRequest.bin", message);
     }
@@ -209,9 +216,14 @@ public class SerializationsTest extends AbstractSerializationsTester
         InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
         InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
         // sync success
-        SyncComplete success = new SyncComplete(DESC, src, dest, true);
+        List<SessionSummary> summaries = new ArrayList<>();
+        summaries.add(new SessionSummary(src, dest,
+                                         Lists.newArrayList(new StreamSummary(TableId.fromUUID(UUIDGen.getTimeUUID()), 5, 100)),
+                                         Lists.newArrayList(new StreamSummary(TableId.fromUUID(UUIDGen.getTimeUUID()), 500, 10))
+        ));
+        SyncComplete success = new SyncComplete(DESC, src, dest, true, summaries);
         // sync fail
-        SyncComplete fail = new SyncComplete(DESC, src, dest, false);
+        SyncComplete fail = new SyncComplete(DESC, src, dest, false, Collections.emptyList());
 
         testRepairMessageWrite("service.SyncComplete.bin", success, fail);
     }

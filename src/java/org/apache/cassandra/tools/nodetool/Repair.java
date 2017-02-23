@@ -32,6 +32,7 @@ import java.util.Set;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.schema.SchemaConstants;
+import org.apache.cassandra.repair.PreviewKind;
 import org.apache.cassandra.repair.RepairParallelism;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.tools.NodeProbe;
@@ -73,6 +74,12 @@ public class Repair extends NodeToolCmd
     @Option(title = "full", name = {"-full", "--full"}, description = "Use -full to issue a full repair.")
     private boolean fullRepair = false;
 
+    @Option(title = "preview", name = {"-p", "--preview"}, description = "Determine ranges and amount of data to be streamed, but don't actually perform repair")
+    private boolean preview = false;
+
+    @Option(title = "repaired", name = {"-r", "--repaired"}, description = "Perform preview on repaired data, only used with -p/--preview")
+    private boolean repaired = false;
+
     @Option(title = "job_threads", name = {"-j", "--job-threads"}, description = "Number of threads to run repair jobs. " +
                                                                                  "Usually this means number of CFs to repair concurrently. " +
                                                                                  "WARNING: increasing this puts more load on repairing nodes, so be careful. (default: 1, max: 4)")
@@ -84,6 +91,26 @@ public class Repair extends NodeToolCmd
     @Option(title = "pull_repair", name = {"-pl", "--pull"}, description = "Use --pull to perform a one way repair where data is only streamed from a remote node to this node.")
     private boolean pullRepair = false;
 
+    private PreviewKind getPreviewKind()
+    {
+        if (preview && repaired)
+        {
+            return PreviewKind.REPAIRED;
+        }
+        else if (preview && fullRepair)
+        {
+            return PreviewKind.FULL;
+        }
+        else if (preview)
+        {
+            return PreviewKind.UNREPAIRED;
+        }
+        else
+        {
+            return PreviewKind.NONE;
+        }
+    }
+
     @Override
     public void execute(NodeProbe probe)
     {
@@ -92,6 +119,11 @@ public class Repair extends NodeToolCmd
 
         if (primaryRange && (!specificDataCenters.isEmpty() || !specificHosts.isEmpty()))
             throw new RuntimeException("Primary range repair should be performed on all nodes in the cluster.");
+
+        if (repaired && !preview)
+        {
+            throw new RuntimeException("-r/--repaired can only be set when -p/--preview is set");
+        }
 
         for (String keyspace : keyspaces)
         {
@@ -112,6 +144,8 @@ public class Repair extends NodeToolCmd
             options.put(RepairOption.TRACE_KEY, Boolean.toString(trace));
             options.put(RepairOption.COLUMNFAMILIES_KEY, StringUtils.join(cfnames, ","));
             options.put(RepairOption.PULL_REPAIR_KEY, Boolean.toString(pullRepair));
+            options.put(RepairOption.PREVIEW, getPreviewKind().toString());
+
             if (!startToken.isEmpty() || !endToken.isEmpty())
             {
                 options.put(RepairOption.RANGES_KEY, startToken + ":" + endToken);

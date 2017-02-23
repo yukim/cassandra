@@ -41,6 +41,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.repair.PreviewKind;
 import org.apache.cassandra.repair.RepairJobDesc;
 import org.apache.cassandra.repair.Validator;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -106,7 +107,8 @@ public class CompactionManagerGetSSTablesForValidationTest
                                                                  Sets.newHashSet(range),
                                                                  incremental,
                                                                  incremental ? System.currentTimeMillis() : ActiveRepairService.UNREPAIRED_SSTABLE,
-                                                                 true);
+                                                                 true,
+                                                                 PreviewKind.NONE);
         desc = new RepairJobDesc(sessionID, UUIDGen.getTimeUUID(), ks, tbl, Collections.singleton(range));
     }
 

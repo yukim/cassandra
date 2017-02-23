@@ -36,6 +36,8 @@ import org.apache.cassandra.streaming.StreamState;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.MerkleTree;
+import org.apache.cassandra.utils.MerkleTrees;
 
 /**
  * LocalSyncTask performs streaming between local(coordinator) node and remote replica.
@@ -51,9 +53,9 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
 
     private final boolean pullRepair;
 
-    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, long repairedAt, UUID pendingRepair, boolean pullRepair)
+    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, long repairedAt, UUID pendingRepair, boolean pullRepair, boolean isPreview)
     {
-        super(desc, r1, r2);
+        super(desc, r1, r2, isPreview);
         this.repairedAt = repairedAt;
         this.pendingRepair = pendingRepair;
         this.pullRepair = pullRepair;
@@ -63,6 +65,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
      * Starts sending/receiving our list of differences to/from the remote endpoint: creates a callback
      * that will be called out of band once the streams complete.
      */
+    @Override
     protected void startSync(List<Range<Token>> differences)
     {
         InetAddress local = FBUtilities.getBroadcastAddress();
@@ -79,7 +82,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
             isIncremental = prs.isIncremental;
         }
         Tracing.traceRepair(message);
-        StreamPlan plan = new StreamPlan("Repair", repairedAt, 1, false, isIncremental, false, pendingRepair).listeners(this)
+        StreamPlan plan = new StreamPlan("Repair", repairedAt, 1, false, isIncremental, false, pendingRepair, isPreview).listeners(this)
                                             .flushBeforeTransfer(true)
                                             // request ranges from the remote node
                                             .requestRanges(dst, preferred, desc.keyspace, differences, desc.columnFamily);
@@ -123,7 +126,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
         String message = String.format("Sync complete using session %s between %s and %s on %s", desc.sessionId, r1.endpoint, r2.endpoint, desc.columnFamily);
         logger.info("[repair #{}] {}", desc.sessionId, message);
         Tracing.traceRepair(message);
-        set(stat);
+        set(stat.withSummaries(result.createSummaries()));
     }
 
     public void onFailure(Throwable t)

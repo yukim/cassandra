@@ -85,7 +85,8 @@ public abstract class AbstractRepairTest
                                                                  Sets.newHashSet(RANGE1, RANGE2, RANGE3),
                                                                  isIncremental,
                                                                  repairedAt,
-                                                                 isGlobal);
+                                                                 isGlobal,
+                                                                 PreviewKind.NONE);
         return sessionId;
     }
 }
