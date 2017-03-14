@@ -99,7 +99,7 @@ public class Repair extends NodeToolCmd
         }
         else if (preview && fullRepair)
         {
-            return PreviewKind.FULL;
+            return PreviewKind.ALL;
         }
         else if (preview)
         {

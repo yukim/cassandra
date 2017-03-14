@@ -498,7 +498,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         {
             switch (previewKind)
             {
-                case FULL:
+                case ALL:
                     return (s) -> true;
                 case REPAIRED:
                     return (s) -> s.isRepaired();

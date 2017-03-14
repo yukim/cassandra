@@ -20,7 +20,7 @@ package org.apache.cassandra.streaming;
 
 public enum PreviewKind
 {
-    NONE(0), UNREPAIRED(1), FULL(2), REPAIRED(3);
+    NONE(0), ALL(1), UNREPAIRED(2), REPAIRED(3);
 
     private final int serializationVal;
 
