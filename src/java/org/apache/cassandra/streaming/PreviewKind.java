@@ -19,15 +19,16 @@
 package org.apache.cassandra.streaming;
 
 
-import java.util.function.Predicate;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 
 public enum PreviewKind
 {
     NONE(0, null),
-    ALL(1, s -> true),
-    UNREPAIRED(2, s -> !s.isRepaired()),
+    ALL(1, Predicates.alwaysTrue()),
+    UNREPAIRED(2, Predicates.not(SSTableReader::isRepaired)),
     REPAIRED(3, SSTableReader::isRepaired);
 
     private final int serializationVal;
