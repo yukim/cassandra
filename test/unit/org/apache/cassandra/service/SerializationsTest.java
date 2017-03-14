@@ -47,6 +47,7 @@ import org.apache.cassandra.repair.RepairJobDesc;
 import org.apache.cassandra.repair.Validator;
 import org.apache.cassandra.repair.messages.*;
 import org.apache.cassandra.schema.TableId;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.SessionSummary;
 import org.apache.cassandra.streaming.StreamSummary;
 import org.apache.cassandra.utils.FBUtilities;
@@ -182,8 +183,8 @@ public class SerializationsTest extends AbstractSerializationsTester
         InetAddress local = InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
         InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
         InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
-        SyncRequest message = new SyncRequest(DESC, local, src, dest, Collections.singleton(FULL_RANGE), false);
 
+        SyncRequest message = new SyncRequest(DESC, local, src, dest, Collections.singleton(FULL_RANGE), PreviewKind.NONE);
         testRepairMessageWrite("service.SyncRequest.bin", message);
     }
 

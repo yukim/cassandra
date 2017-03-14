@@ -50,10 +50,10 @@ public class StreamCoordinator
     private final boolean isIncremental;
     private Iterator<StreamSession> sessionsToConnect = null;
     private final UUID pendingRepair;
-    private final boolean isPreview;
+    private final PreviewKind previewKind;
 
     public StreamCoordinator(int connectionsPerHost, boolean keepSSTableLevel, boolean isIncremental,
-                             StreamConnectionFactory factory, boolean connectSequentially, UUID pendingRepair, boolean isPreview)
+                             StreamConnectionFactory factory, boolean connectSequentially, UUID pendingRepair, PreviewKind previewKind)
     {
         this.connectionsPerHost = connectionsPerHost;
         this.factory = factory;
@@ -61,7 +61,7 @@ public class StreamCoordinator
         this.isIncremental = isIncremental;
         this.connectSequentially = connectSequentially;
         this.pendingRepair = pendingRepair;
-        this.isPreview = isPreview;
+        this.previewKind = previewKind;
     }
 
     public void setConnectionFactory(StreamConnectionFactory factory)
@@ -292,7 +292,7 @@ public class StreamCoordinator
             // create
             if (streamSessions.size() < connectionsPerHost)
             {
-                StreamSession session = new StreamSession(peer, connecting, factory, streamSessions.size(), keepSSTableLevel, isIncremental, pendingRepair, isPreview);
+                StreamSession session = new StreamSession(peer, connecting, factory, streamSessions.size(), keepSSTableLevel, isIncremental, pendingRepair, previewKind);
                 streamSessions.put(++lastReturned, session);
                 return session;
             }
@@ -324,7 +324,7 @@ public class StreamCoordinator
             StreamSession session = streamSessions.get(id);
             if (session == null)
             {
-                session = new StreamSession(peer, connecting, factory, id, keepSSTableLevel, isIncremental, pendingRepair, isPreview);
+                session = new StreamSession(peer, connecting, factory, id, keepSSTableLevel, isIncremental, pendingRepair, previewKind);
                 streamSessions.put(id, session);
             }
             return session;

@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.MerkleTrees;
 
@@ -39,16 +40,16 @@ public abstract class SyncTask extends AbstractFuture<SyncStat> implements Runna
     protected final RepairJobDesc desc;
     protected final TreeResponse r1;
     protected final TreeResponse r2;
-    protected final boolean isPreview;
+    protected final PreviewKind previewKind;
 
     protected volatile SyncStat stat;
 
-    public SyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, boolean isPreview)
+    public SyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, PreviewKind previewKind)
     {
         this.desc = desc;
         this.r1 = r1;
         this.r2 = r2;
-        this.isPreview = isPreview;
+        this.previewKind = previewKind;
     }
 
     /**

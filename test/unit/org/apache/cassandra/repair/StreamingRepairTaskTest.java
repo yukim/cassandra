@@ -33,6 +33,7 @@ import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.ActiveRepairService;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.StreamPlan;
 import org.apache.cassandra.utils.UUIDGen;
 
@@ -64,8 +65,8 @@ public class StreamingRepairTaskTest extends AbstractRepairTest
         UUID sessionID = registerSession(cfs, true, true);
         ActiveRepairService.ParentRepairSession prs = ActiveRepairService.instance.getParentRepairSession(sessionID);
         RepairJobDesc desc = new RepairJobDesc(sessionID, UUIDGen.getTimeUUID(), ks, tbl, prs.getRanges());
-        SyncRequest request = new SyncRequest(desc, PARTICIPANT1, PARTICIPANT2, PARTICIPANT3, prs.getRanges(), false);
-        StreamingRepairTask task = new StreamingRepairTask(desc, request, prs.getRepairedAt(), prs.isIncremental, false);
+        SyncRequest request = new SyncRequest(desc, PARTICIPANT1, PARTICIPANT2, PARTICIPANT3, prs.getRanges(), PreviewKind.NONE);
+        StreamingRepairTask task = new StreamingRepairTask(desc, request, prs.getRepairedAt(), prs.isIncremental, PreviewKind.NONE);
 
         StreamPlan plan = task.createStreamPlan(request.src, request.dst, prs.isIncremental);
         Assert.assertFalse(plan.getFlushBeforeTransfer());
@@ -79,8 +80,8 @@ public class StreamingRepairTaskTest extends AbstractRepairTest
         UUID sessionID = registerSession(cfs, false, true);
         ActiveRepairService.ParentRepairSession prs = ActiveRepairService.instance.getParentRepairSession(sessionID);
         RepairJobDesc desc = new RepairJobDesc(sessionID, UUIDGen.getTimeUUID(), ks, tbl, prs.getRanges());
-        SyncRequest request = new SyncRequest(desc, PARTICIPANT1, PARTICIPANT2, PARTICIPANT3, prs.getRanges(), false);
-        StreamingRepairTask task = new StreamingRepairTask(desc, request, prs.getRepairedAt(), prs.isIncremental, false);
+        SyncRequest request = new SyncRequest(desc, PARTICIPANT1, PARTICIPANT2, PARTICIPANT3, prs.getRanges(), PreviewKind.NONE);
+        StreamingRepairTask task = new StreamingRepairTask(desc, request, prs.getRepairedAt(), prs.isIncremental, PreviewKind.NONE);
 
         StreamPlan plan = task.createStreamPlan(request.src, request.dst, prs.isIncremental);
         Assert.assertTrue(plan.getFlushBeforeTransfer());

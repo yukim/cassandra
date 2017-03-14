@@ -351,7 +351,7 @@ public class RepairOption
 
     public boolean isPreview()
     {
-        return previewKind != PreviewKind.NONE;
+        return previewKind.isPreview();
     }
 
     public boolean isInLocalDCOnly() {

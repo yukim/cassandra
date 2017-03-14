@@ -33,6 +33,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.RepairJobDesc;
+import org.apache.cassandra.streaming.PreviewKind;
 
 /**
  * Body part of SYNC_REQUEST repair message.
@@ -48,16 +49,16 @@ public class SyncRequest extends RepairMessage
     public final InetAddress src;
     public final InetAddress dst;
     public final Collection<Range<Token>> ranges;
-    public final boolean isPreview;
+    public final PreviewKind previewKind;
 
-    public SyncRequest(RepairJobDesc desc, InetAddress initiator, InetAddress src, InetAddress dst, Collection<Range<Token>> ranges, boolean isPreview)
+    public SyncRequest(RepairJobDesc desc, InetAddress initiator, InetAddress src, InetAddress dst, Collection<Range<Token>> ranges, PreviewKind previewKind)
     {
         super(Type.SYNC_REQUEST, desc);
         this.initiator = initiator;
         this.src = src;
         this.dst = dst;
         this.ranges = ranges;
-        this.isPreview = isPreview;
+        this.previewKind = previewKind;
     }
 
     @Override
@@ -72,13 +73,13 @@ public class SyncRequest extends RepairMessage
                src.equals(req.src) &&
                dst.equals(req.dst) &&
                ranges.equals(req.ranges) &&
-               isPreview == req.isPreview;
+               previewKind == req.previewKind;
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(messageType, desc, initiator, src, dst, ranges, isPreview);
+        return Objects.hash(messageType, desc, initiator, src, dst, ranges, previewKind);
     }
 
     public static class SyncRequestSerializer implements MessageSerializer<SyncRequest>
@@ -95,7 +96,7 @@ public class SyncRequest extends RepairMessage
                 MessagingService.validatePartitioner(range);
                 AbstractBounds.tokenSerializer.serialize(range, out, version);
             }
-            out.writeBoolean(message.isPreview);
+            out.writeInt(message.previewKind.getSerializationVal());
         }
 
         public SyncRequest deserialize(DataInputPlus in, int version) throws IOException
@@ -108,8 +109,8 @@ public class SyncRequest extends RepairMessage
             List<Range<Token>> ranges = new ArrayList<>(rangesCount);
             for (int i = 0; i < rangesCount; ++i)
                 ranges.add((Range<Token>) AbstractBounds.tokenSerializer.deserialize(in, MessagingService.globalPartitioner(), version));
-            boolean isPreview = in.readBoolean();
-            return new SyncRequest(desc, owner, src, dst, ranges, isPreview);
+            PreviewKind previewKind = PreviewKind.deserialize(in.readInt());
+            return new SyncRequest(desc, owner, src, dst, ranges, previewKind);
         }
 
         public long serializedSize(SyncRequest message, int version)
@@ -119,7 +120,7 @@ public class SyncRequest extends RepairMessage
             size += TypeSizes.sizeof(message.ranges.size());
             for (Range<Token> range : message.ranges)
                 size += AbstractBounds.tokenSerializer.serializedSize(range, version);
-            size += TypeSizes.sizeof(message.isPreview);
+            size += TypeSizes.sizeof(message.previewKind.getSerializationVal());
             return size;
         }
     }
@@ -132,7 +133,7 @@ public class SyncRequest extends RepairMessage
                 ", src=" + src +
                 ", dst=" + dst +
                 ", ranges=" + ranges +
-                ", isPreview=" + isPreview +
+                ", previewKind=" + previewKind +
                 "} " + super.toString();
     }
 }

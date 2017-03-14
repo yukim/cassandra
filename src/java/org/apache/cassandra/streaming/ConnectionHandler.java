@@ -196,16 +196,15 @@ public class ConnectionHandler
         @SuppressWarnings("resource")
         private void sendInitMessage() throws IOException
         {
-            StreamInitMessage message = new StreamInitMessage(
-                                                             FBUtilities.getBroadcastAddress(),
-                                                             session.sessionIndex(),
-                                                             session.planId(),
-                                                             session.description(),
-                                                             !isOutgoingHandler,
-                                                             session.keepSSTableLevel(),
-                                                             session.isIncremental(),
-                                                             session.getPendingRepair(),
-                                                             session.isPreview());
+            StreamInitMessage message = new StreamInitMessage(FBUtilities.getBroadcastAddress(),
+                                                              session.sessionIndex(),
+                                                              session.planId(),
+                                                              session.description(),
+                                                              !isOutgoingHandler,
+                                                              session.keepSSTableLevel(),
+                                                              session.isIncremental(),
+                                                              session.getPendingRepair(),
+                                                              session.getPreviewKind());
             ByteBuffer messageBuf = message.createMessage(false, protocolVersion);
             DataOutputStreamPlus out = getWriteChannel(socket);
             out.write(messageBuf);

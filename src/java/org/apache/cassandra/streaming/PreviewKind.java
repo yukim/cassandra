@@ -54,4 +54,9 @@ public enum PreviewKind
     {
         return streamingPredicate;
     }
+
+    public boolean isPreview()
+    {
+        return this != NONE;
+    }
 }

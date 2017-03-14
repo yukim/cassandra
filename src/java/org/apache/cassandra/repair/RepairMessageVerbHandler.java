@@ -140,7 +140,7 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                     if (desc.parentSessionId != null && ActiveRepairService.instance.getParentRepairSession(desc.parentSessionId) != null)
                         repairedAt = ActiveRepairService.instance.getParentRepairSession(desc.parentSessionId).getRepairedAt();
 
-                    StreamingRepairTask task = new StreamingRepairTask(desc, request, repairedAt, isConsistent(desc.parentSessionId), request.isPreview);
+                    StreamingRepairTask task = new StreamingRepairTask(desc, request, repairedAt, isConsistent(desc.parentSessionId), request.previewKind);
                     task.run();
                     break;
 

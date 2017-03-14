@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
@@ -43,7 +44,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
     private final long repairedAt;
     private final ListeningExecutorService taskExecutor;
     private final boolean isConsistent;
-    private final boolean preview;
+    private final PreviewKind previewKind;
 
     /**
      * Create repair job to run on specific columnfamily
@@ -51,7 +52,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
      * @param session RepairSession that this RepairJob belongs
      * @param columnFamily name of the ColumnFamily to repair
      */
-    public RepairJob(RepairSession session, String columnFamily, boolean isConsistent, boolean preview)
+    public RepairJob(RepairSession session, String columnFamily, boolean isConsistent, PreviewKind previewKind)
     {
         this.session = session;
         this.desc = new RepairJobDesc(session.parentRepairSession, session.getId(), session.keyspace, columnFamily, session.getRanges());
@@ -59,7 +60,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         this.taskExecutor = session.taskExecutor;
         this.parallelismDegree = session.parallelismDegree;
         this.isConsistent = isConsistent;
-        this.preview = preview;
+        this.previewKind = previewKind;
     }
 
     /**
@@ -132,11 +133,11 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                         SyncTask task;
                         if (r1.endpoint.equals(local) || r2.endpoint.equals(local))
                         {
-                            task = new LocalSyncTask(desc, r1, r2, repairedAt, isConsistent ? desc.parentSessionId : null, session.pullRepair, session.preview);
+                            task = new LocalSyncTask(desc, r1, r2, repairedAt, isConsistent ? desc.parentSessionId : null, session.pullRepair, session.previewKind);
                         }
                         else
                         {
-                            task = new RemoteSyncTask(desc, r1, r2, session.preview);
+                            task = new RemoteSyncTask(desc, r1, r2, session.previewKind);
                             // RemoteSyncTask expects SyncComplete message sent back.
                             // Register task to RepairSession to receive response.
                             session.waitForSync(Pair.create(desc, new NodePair(r1.endpoint, r2.endpoint)), (RemoteSyncTask) task);
@@ -154,7 +155,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         {
             public void onSuccess(List<SyncStat> stats)
             {
-                if (!preview)
+                if (!previewKind.isPreview())
                 {
                     logger.info("[repair #{}] {} is fully synced", session.getId(), desc.columnFamily);
                     SystemDistributedKeyspace.successfulRepairJob(session.getId(), desc.keyspace, desc.columnFamily);
@@ -167,7 +168,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
              */
             public void onFailure(Throwable t)
             {
-                if (!preview)
+                if (!previewKind.isPreview())
                 {
                     logger.warn("[repair #{}] {} sync failed", session.getId(), desc.columnFamily);
                     SystemDistributedKeyspace.failedRepairJob(session.getId(), desc.keyspace, desc.columnFamily, t);

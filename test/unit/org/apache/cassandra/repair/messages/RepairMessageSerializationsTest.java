@@ -150,7 +150,7 @@ public class RepairMessageSerializationsTest
         InetAddress src = InetAddress.getByName("127.0.0.2");
         InetAddress dst = InetAddress.getByName("127.0.0.3");
 
-        SyncRequest msg = new SyncRequest(buildRepairJobDesc(), initiator, src, dst, buildTokenRanges(), false);
+        SyncRequest msg = new SyncRequest(buildRepairJobDesc(), initiator, src, dst, buildTokenRanges(), PreviewKind.NONE);
         serializeRoundTrip(msg, SyncRequest.serializer);
     }
 

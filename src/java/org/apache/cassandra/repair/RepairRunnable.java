@@ -403,7 +403,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                                                      repairedAt,
                                                                                      isConsistent,
                                                                                      options.isPullRepair(),
-                                                                                     options.isPreview(),
+                                                                                     options.getPreviewKind(),
                                                                                      executor,
                                                                                      cfnames);
             if (session == null)

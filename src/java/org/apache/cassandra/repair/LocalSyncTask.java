@@ -28,6 +28,7 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.service.ActiveRepairService;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamEvent;
 import org.apache.cassandra.streaming.StreamEventHandler;
@@ -53,9 +54,9 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
 
     private final boolean pullRepair;
 
-    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, long repairedAt, UUID pendingRepair, boolean pullRepair, boolean isPreview)
+    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, long repairedAt, UUID pendingRepair, boolean pullRepair, PreviewKind previewKind)
     {
-        super(desc, r1, r2, isPreview);
+        super(desc, r1, r2, previewKind);
         this.repairedAt = repairedAt;
         this.pendingRepair = pendingRepair;
         this.pullRepair = pullRepair;
@@ -82,7 +83,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
             isIncremental = prs.isIncremental;
         }
         Tracing.traceRepair(message);
-        StreamPlan plan = new StreamPlan("Repair", repairedAt, 1, false, isIncremental, false, pendingRepair, isPreview).listeners(this)
+        StreamPlan plan = new StreamPlan("Repair", repairedAt, 1, false, isIncremental, false, pendingRepair, previewKind).listeners(this)
                                             .flushBeforeTransfer(true)
                                             // request ranges from the remote node
                                             .requestRanges(dst, preferred, desc.keyspace, differences, desc.columnFamily);

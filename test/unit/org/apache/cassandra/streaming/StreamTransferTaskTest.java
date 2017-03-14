@@ -74,7 +74,7 @@ public class StreamTransferTaskTest
     public void testScheduleTimeout() throws Exception
     {
         InetAddress peer = FBUtilities.getBroadcastAddress();
-        StreamSession session = new StreamSession(peer, peer, null, 0, true, false, null, false);
+        StreamSession session = new StreamSession(peer, peer, null, 0, true, false, null, PreviewKind.NONE);
         ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD);
 
         // create two sstables
@@ -120,9 +120,9 @@ public class StreamTransferTaskTest
     public void testFailSessionDuringTransferShouldNotReleaseReferences() throws Exception
     {
         InetAddress peer = FBUtilities.getBroadcastAddress();
-        StreamCoordinator streamCoordinator = new StreamCoordinator(1, true, false, null, false, null, false);
+        StreamCoordinator streamCoordinator = new StreamCoordinator(1, true, false, null, false, null, PreviewKind.NONE);
         StreamResultFuture future = StreamResultFuture.init(UUID.randomUUID(), "", Collections.<StreamEventHandler>emptyList(), streamCoordinator);
-        StreamSession session = new StreamSession(peer, peer, null, 0, true, false, null, false);
+        StreamSession session = new StreamSession(peer, peer, null, 0, true, false, null, PreviewKind.NONE);
         session.init(future);
         ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD);
 

@@ -34,6 +34,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.*;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.SessionSummary;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
@@ -93,7 +94,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     public final Set<InetAddress> endpoints;
     public final long repairedAt;
     public final boolean isConsistent;
-    public final boolean preview;
+    public final PreviewKind previewKind;
 
     private final AtomicBoolean isFailed = new AtomicBoolean(false);
 
@@ -129,7 +130,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
                          long repairedAt,
                          boolean isConsistent,
                          boolean pullRepair,
-                         boolean preview,
+                         PreviewKind previewKind,
                          String... cfnames)
     {
         assert cfnames.length > 0 : "Repairing no column families seems pointless, doesn't it";
@@ -143,7 +144,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         this.endpoints = endpoints;
         this.repairedAt = repairedAt;
         this.isConsistent = isConsistent;
-        this.preview = preview;
+        this.previewKind = previewKind;
         this.pullRepair = pullRepair;
     }
 
@@ -263,7 +264,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         List<ListenableFuture<RepairResult>> jobs = new ArrayList<>(cfnames.length);
         for (String cfname : cfnames)
         {
-            RepairJob job = new RepairJob(this, cfname, isConsistent, preview);
+            RepairJob job = new RepairJob(this, cfname, isConsistent, previewKind);
             executor.execute(job);
             jobs.add(job);
         }
