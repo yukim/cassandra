@@ -77,8 +77,8 @@ public class Repair extends NodeToolCmd
     @Option(title = "preview", name = {"-p", "--preview"}, description = "Determine ranges and amount of data to be streamed, but don't actually perform repair")
     private boolean preview = false;
 
-    @Option(title = "repaired", name = {"-r", "--repaired"}, description = "Perform preview on repaired data, only used with -p/--preview")
-    private boolean repaired = false;
+    @Option(title = "validate", name = {"--vd", "--validate"}, description = "Checks that repaired data is in sync between nodes. Out of sync repaired data indicates a full repair should be run.")
+    private boolean validate = false;
 
     @Option(title = "job_threads", name = {"-j", "--job-threads"}, description = "Number of threads to run repair jobs. " +
                                                                                  "Usually this means number of CFs to repair concurrently. " +
@@ -93,7 +93,7 @@ public class Repair extends NodeToolCmd
 
     private PreviewKind getPreviewKind()
     {
-        if (preview && repaired)
+        if (validate)
         {
             return PreviewKind.REPAIRED;
         }
@@ -119,11 +119,6 @@ public class Repair extends NodeToolCmd
 
         if (primaryRange && (!specificDataCenters.isEmpty() || !specificHosts.isEmpty()))
             throw new RuntimeException("Primary range repair should be performed on all nodes in the cluster.");
-
-        if (repaired && !preview)
-        {
-            throw new RuntimeException("-r/--repaired can only be set when -p/--preview is set");
-        }
 
         for (String keyspace : keyspaces)
         {

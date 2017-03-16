@@ -51,6 +51,7 @@ import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -341,17 +342,19 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             {
                 try
                 {
+                    PreviewKind previewKind = options.getPreviewKind();
+                    assert previewKind != PreviewKind.NONE;
                     SyncStatSummary summary = new SyncStatSummary(true);
                     summary.consumeSessionResults(results);
 
                     if (summary.isEmpty())
                     {
-                        fireProgressEvent(tag, new ProgressEvent(ProgressEventType.NOTIFICATION, progress.get(), totalProgress,
-                                                                 "Previewed data was in sync"));
+                        String message = previewKind == PreviewKind.REPAIRED ? "Repaired data is in sync" : "Previewed data was in sync";
+                        fireProgressEvent(tag, new ProgressEvent(ProgressEventType.NOTIFICATION, progress.get(), totalProgress, message));
                     }
                     else
                     {
-                        String message =  "Preview complete\n" + summary.toString();
+                        String message =  (previewKind == PreviewKind.REPAIRED ? "Repaired data is inconsistent\n" : "Preview complete\n") + summary.toString();
                         fireProgressEvent(tag, new ProgressEvent(ProgressEventType.NOTIFICATION, progress.get(), totalProgress, message));
                     }
 
