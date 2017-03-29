@@ -32,7 +32,7 @@ import java.util.Set;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.schema.SchemaConstants;
-import org.apache.cassandra.streaming.PreviewKind;
+import org.apache.cassandra.repair.PreviewKind;
 import org.apache.cassandra.repair.RepairParallelism;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.tools.NodeProbe;
@@ -95,15 +95,15 @@ public class Repair extends NodeToolCmd
     {
         if (validate)
         {
-            return PreviewKind.REPAIRED;
+            return PreviewKind.VALIDATE;
         }
         else if (preview && fullRepair)
         {
-            return PreviewKind.ALL;
+            return PreviewKind.FULL;
         }
         else if (preview)
         {
-            return PreviewKind.UNREPAIRED;
+            return PreviewKind.INCREMENTAL;
         }
         else
         {

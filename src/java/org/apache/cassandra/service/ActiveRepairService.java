@@ -61,7 +61,7 @@ import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.streaming.PreviewKind;
+import org.apache.cassandra.repair.PreviewKind;
 import org.apache.cassandra.repair.RepairJobDesc;
 import org.apache.cassandra.repair.RepairParallelism;
 import org.apache.cassandra.repair.RepairSession;
@@ -190,7 +190,14 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         if (cfnames.length == 0)
             return null;
 
-        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace, parallelismDegree, endpoints, repairedAt, isConsistent, pullRepair, previewKind, cfnames);
+        final RepairSession session = new RepairSession(parentRepairSession,
+                                                        UUIDGen.getTimeUUID(),
+                                                        range, keyspace,
+                                                        parallelismDegree,
+                                                        endpoints,
+                                                        repairedAt,
+                                                        isConsistent,
+                                                        pullRepair, previewKind, cfnames);
 
         sessions.put(session.getId(), session);
         // register listeners
@@ -491,22 +498,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
 
         public boolean isPreview()
         {
-            return previewKind != PreviewKind.NONE;
-        }
-
-        public Predicate<SSTableReader> getPreviewPredicate()
-        {
-            switch (previewKind)
-            {
-                case ALL:
-                    return (s) -> true;
-                case REPAIRED:
-                    return (s) -> s.isRepaired();
-                case UNREPAIRED:
-                    return (s) -> !s.isRepaired();
-                default:
-                    throw new RuntimeException("Can't get preview predicate for preview kind " + previewKind);
-            }
+            return previewKind.isPreview();
         }
 
         public synchronized void maybeSnapshot(TableId tableId, UUID parentSessionId)

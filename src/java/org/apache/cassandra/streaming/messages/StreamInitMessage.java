@@ -30,7 +30,6 @@ import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
@@ -51,9 +50,9 @@ public class StreamInitMessage
     public final boolean keepSSTableLevel;
     public final boolean isIncremental;
     public final UUID pendingRepair;
-    public final PreviewKind previewKind;
+    public final boolean preview;
 
-    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair, PreviewKind previewKind)
+    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair, boolean preview)
     {
         this.from = from;
         this.sessionIndex = sessionIndex;
@@ -63,7 +62,7 @@ public class StreamInitMessage
         this.keepSSTableLevel = keepSSTableLevel;
         this.isIncremental = isIncremental;
         this.pendingRepair = pendingRepair;
-        this.previewKind = previewKind;
+        this.preview = preview;
     }
 
     /**
@@ -125,7 +124,7 @@ public class StreamInitMessage
             {
                 UUIDSerializer.serializer.serialize(message.pendingRepair, out, MessagingService.current_version);
             }
-            out.writeInt(message.previewKind.getSerializationVal());
+            out.writeBoolean(message.preview);
         }
 
         public StreamInitMessage deserialize(DataInputPlus in, int version) throws IOException
@@ -139,8 +138,8 @@ public class StreamInitMessage
 
             boolean isIncremental = in.readBoolean();
             UUID pendingRepair = in.readBoolean() ? UUIDSerializer.serializer.deserialize(in, version) : null;
-            PreviewKind previewKind = PreviewKind.deserialize(in.readInt());
-            return new StreamInitMessage(from, sessionIndex, planId, description, sentByInitiator, keepSSTableLevel, isIncremental, pendingRepair, previewKind);
+            boolean preview = in.readBoolean();
+            return new StreamInitMessage(from, sessionIndex, planId, description, sentByInitiator, keepSSTableLevel, isIncremental, pendingRepair, preview);
         }
 
         public long serializedSize(StreamInitMessage message, int version)
@@ -157,7 +156,7 @@ public class StreamInitMessage
             {
                 size += UUIDSerializer.serializer.serializedSize(message.pendingRepair, MessagingService.current_version);
             }
-            size += TypeSizes.sizeof(message.previewKind.getSerializationVal());
+            size += TypeSizes.sizeof(message.preview);
             return size;
         }
     }

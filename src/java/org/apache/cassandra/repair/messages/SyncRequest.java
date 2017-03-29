@@ -33,7 +33,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.RepairJobDesc;
-import org.apache.cassandra.streaming.PreviewKind;
+import org.apache.cassandra.repair.PreviewKind;
 
 /**
  * Body part of SYNC_REQUEST repair message.

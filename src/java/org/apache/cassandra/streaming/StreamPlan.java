@@ -22,6 +22,7 @@ import java.util.*;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.repair.PreviewKind;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.UUIDGen;
 
@@ -48,21 +49,21 @@ public class StreamPlan
      */
     public StreamPlan(String description)
     {
-        this(description, ActiveRepairService.UNREPAIRED_SSTABLE, 1, false, false, false, null, PreviewKind.NONE);
+        this(description, ActiveRepairService.UNREPAIRED_SSTABLE, 1, false, false, false, null, false);
     }
 
     public StreamPlan(String description, boolean keepSSTableLevels, boolean connectSequentially)
     {
-        this(description, ActiveRepairService.UNREPAIRED_SSTABLE, 1, keepSSTableLevels, false, connectSequentially, null, PreviewKind.NONE);
+        this(description, ActiveRepairService.UNREPAIRED_SSTABLE, 1, keepSSTableLevels, false, connectSequentially, null, false);
     }
 
     public StreamPlan(String description, long repairedAt, int connectionsPerHost, boolean keepSSTableLevels,
-                      boolean isIncremental, boolean connectSequentially, UUID pendingRepair, PreviewKind previewKind)
+                      boolean isIncremental, boolean connectSequentially, UUID pendingRepair, boolean preview)
     {
         this.description = description;
         this.repairedAt = repairedAt;
         this.coordinator = new StreamCoordinator(connectionsPerHost, keepSSTableLevels, isIncremental, new DefaultConnectionFactory(),
-                                                 connectSequentially, pendingRepair, previewKind);
+                                                 connectSequentially, pendingRepair, preview);
     }
 
     /**

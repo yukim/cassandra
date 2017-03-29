@@ -1429,7 +1429,7 @@ public class CompactionManager implements CompactionManagerMBean
         com.google.common.base.Predicate<SSTableReader> predicate;
         if (prs.isPreview())
         {
-            predicate = prs.getPreviewPredicate();
+            predicate = prs.previewKind.getValidationPredicate();
 
         }
         else if (validator.isConsistent)

@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
+import org.apache.cassandra.repair.PreviewKind;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -50,10 +51,10 @@ public class StreamCoordinator
     private final boolean isIncremental;
     private Iterator<StreamSession> sessionsToConnect = null;
     private final UUID pendingRepair;
-    private final PreviewKind previewKind;
+    private final boolean preview;
 
     public StreamCoordinator(int connectionsPerHost, boolean keepSSTableLevel, boolean isIncremental,
-                             StreamConnectionFactory factory, boolean connectSequentially, UUID pendingRepair, PreviewKind previewKind)
+                             StreamConnectionFactory factory, boolean connectSequentially, UUID pendingRepair, boolean preview)
     {
         this.connectionsPerHost = connectionsPerHost;
         this.factory = factory;
@@ -61,7 +62,7 @@ public class StreamCoordinator
         this.isIncremental = isIncremental;
         this.connectSequentially = connectSequentially;
         this.pendingRepair = pendingRepair;
-        this.previewKind = previewKind;
+        this.preview = preview;
     }
 
     public void setConnectionFactory(StreamConnectionFactory factory)
@@ -292,7 +293,7 @@ public class StreamCoordinator
             // create
             if (streamSessions.size() < connectionsPerHost)
             {
-                StreamSession session = new StreamSession(peer, connecting, factory, streamSessions.size(), keepSSTableLevel, isIncremental, pendingRepair, previewKind);
+                StreamSession session = new StreamSession(peer, connecting, factory, streamSessions.size(), keepSSTableLevel, isIncremental, pendingRepair, preview);
                 streamSessions.put(++lastReturned, session);
                 return session;
             }
@@ -321,13 +322,8 @@ public class StreamCoordinator
 
         public StreamSession getOrCreateSessionById(InetAddress peer, int id, InetAddress connecting)
         {
-            StreamSession session = streamSessions.get(id);
-            if (session == null)
-            {
-                session = new StreamSession(peer, connecting, factory, id, keepSSTableLevel, isIncremental, pendingRepair, previewKind);
-                streamSessions.put(id, session);
-            }
-            return session;
+            return streamSessions.computeIfAbsent(id, i -> new StreamSession(peer, connecting, factory, i,
+                                                                             keepSSTableLevel, isIncremental, pendingRepair, preview));
         }
 
         public void updateProgress(ProgressInfo info)

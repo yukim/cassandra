@@ -204,7 +204,7 @@ public class ConnectionHandler
                                                               session.keepSSTableLevel(),
                                                               session.isIncremental(),
                                                               session.getPendingRepair(),
-                                                              session.getPreviewKind());
+                                                              session.isPreview());
             ByteBuffer messageBuf = message.createMessage(false, protocolVersion);
             DataOutputStreamPlus out = getWriteChannel(socket);
             out.write(messageBuf);

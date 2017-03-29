@@ -16,29 +16,43 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.streaming;
-
+package org.apache.cassandra.repair;
 
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 
+/**
+ * Repair preview kind
+ */
 public enum PreviewKind
 {
+    /**
+     * No preview
+     */
     NONE(0, null),
-    ALL(1, Predicates.alwaysTrue()),
-    UNREPAIRED(2, Predicates.not(SSTableReader::isRepaired)),
-    REPAIRED(3, SSTableReader::isRepaired);
+    /**
+     * Full repair preview
+     */
+    FULL(1, Predicates.alwaysTrue()),
+    /**
+     * Incremental repair preview
+     */
+    INCREMENTAL(2, Predicates.not(SSTableReader::isRepaired)),
+    /**
+     * Repair validation
+     */
+    VALIDATE(3, SSTableReader::isRepaired);
 
     private final int serializationVal;
-    private final Predicate<SSTableReader> streamingPredicate;
+    private final Predicate<SSTableReader> validationPredicate;
 
-    PreviewKind(int serializationVal, Predicate<SSTableReader> streamingPredicate)
+    PreviewKind(int serializationVal, Predicate<SSTableReader> validationPredicate)
     {
         assert ordinal() == serializationVal;
         this.serializationVal = serializationVal;
-        this.streamingPredicate = streamingPredicate;
+        this.validationPredicate = validationPredicate;
     }
 
     public int getSerializationVal()
@@ -51,9 +65,9 @@ public enum PreviewKind
         return values()[serializationVal];
     }
 
-    public Predicate<SSTableReader> getStreamingPredicate()
+    public Predicate<SSTableReader> getValidationPredicate()
     {
-        return streamingPredicate;
+        return validationPredicate;
     }
 
     public boolean isPreview()

@@ -165,7 +165,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     private final boolean isIncremental;
     private ScheduledFuture<?> keepAliveFuture = null;
     private final UUID pendingRepair;
-    private final PreviewKind previewKind;
+    private final boolean preview;
 
     public static enum State
     {
@@ -182,11 +182,14 @@ public class StreamSession implements IEndpointStateChangeSubscriber
 
     /**
      * Create new streaming session with the peer.
-     *  @param peer Address of streaming peer
+     *
+     * @param peer Address of streaming peer
      * @param connecting Actual connecting address
      * @param factory is used for establishing connection
      */
-    public StreamSession(InetAddress peer, InetAddress connecting, StreamConnectionFactory factory, int index, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair, PreviewKind previewKind)
+    public StreamSession(InetAddress peer,
+                         InetAddress connecting,
+                         StreamConnectionFactory factory, int index, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair, boolean preview)
     {
         this.peer = peer;
         this.connecting = connecting;
@@ -194,12 +197,12 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         this.factory = factory;
         this.handler = new ConnectionHandler(this, isKeepAliveSupported()?
                                                    (int)TimeUnit.SECONDS.toMillis(2 * DatabaseDescriptor.getStreamingKeepAlivePeriod()) :
-                                                   DatabaseDescriptor.getStreamingSocketTimeout(), previewKind.isPreview());
+                                                   DatabaseDescriptor.getStreamingSocketTimeout(), preview);
         this.metrics = StreamingMetrics.get(connecting);
         this.keepSSTableLevel = keepSSTableLevel;
         this.isIncremental = isIncremental;
         this.pendingRepair = pendingRepair;
-        this.previewKind = previewKind;
+        this.preview = preview;
     }
 
     public UUID planId()
@@ -234,12 +237,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
 
     public boolean isPreview()
     {
-        return previewKind.isPreview();
-    }
-
-    public PreviewKind getPreviewKind()
-    {
-        return previewKind;
+        return preview;
     }
 
     public LifecycleTransaction getTransaction(TableId tableId)
@@ -332,7 +330,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
             flushSSTables(stores);
 
         List<Range<Token>> normalizedRanges = Range.normalize(ranges);
-        List<SSTableStreamingSections> sections = getSSTableSectionsForRanges(normalizedRanges, stores, repairedAt, isIncremental, previewKind);
+        List<SSTableStreamingSections> sections = getSSTableSectionsForRanges(normalizedRanges, stores, repairedAt, isIncremental);
         try
         {
             addTransferFiles(sections);
@@ -374,7 +372,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     }
 
     @VisibleForTesting
-    public static List<SSTableStreamingSections> getSSTableSectionsForRanges(Collection<Range<Token>> ranges, Collection<ColumnFamilyStore> stores, long overriddenRepairedAt, final boolean isIncremental, PreviewKind previewKind)
+    public static List<SSTableStreamingSections> getSSTableSectionsForRanges(Collection<Range<Token>> ranges, Collection<ColumnFamilyStore> stores, long overriddenRepairedAt, final boolean isIncremental)
     {
         Refs<SSTableReader> refs = new Refs<>();
         try
@@ -389,14 +387,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
                     SSTableIntervalTree intervalTree = SSTableIntervalTree.build(view.select(SSTableSet.CANONICAL));
 
                     Predicate<SSTableReader> predicate;
-                    if (previewKind.isPreview())
-                    {
-                        predicate = previewKind.getStreamingPredicate();
-                    }
-                    else
-                    {
                         predicate = s -> (!isIncremental || !s.isRepaired());
-                    }
 
                     for (Range<PartitionPosition> keyRange : keyRanges)
                     {
