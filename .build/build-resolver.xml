@@ -191,7 +191,7 @@
 
         <resolve failOnMissingAttachments="true">
             <dependencies pomRef="all-pom"/>
-            <files dir="${build.lib}" layout="{artifactId}-{version}-{classifier}.{extension}" scopes="compile,!provide,!system"/>
+            <files dir="${build.lib}" layout="{artifactId}-{version}-{classifier}.{extension}" scopes="compile,runtime,!provide,!system"/>
         </resolve>
         <mkdir dir="${local.repository}/org/apache/cassandra/deps/sigar-bin"/>
         <mkdir dir="${build.lib}/sigar-bin"/>

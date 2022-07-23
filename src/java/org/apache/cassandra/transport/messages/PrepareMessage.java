@@ -17,10 +17,19 @@
  */
 package org.apache.cassandra.transport.messages;
 
+import java.net.InetAddress;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableMap;
 
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import org.apache.cassandra.telemetry.Telemetry;
+import org.apache.cassandra.utils.FBUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -109,6 +118,18 @@ public class PrepareMessage extends Message.Request
     protected boolean isTraceable()
     {
         return true;
+    }
+
+    @Override
+    protected Span createSpan(InetAddress clientAddress, Context context) {
+        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(query);
+        spanBuilder.setSpanKind(SpanKind.INTERNAL);
+        spanBuilder.setParent(context);
+        AttributesBuilder attributes = Attributes.builder();
+        attributes.put("type", type.name());
+        attributes.put("client", clientAddress.toString());
+        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        return spanBuilder.setAllAttributes(attributes.build()).startSpan();
     }
 
     @Override

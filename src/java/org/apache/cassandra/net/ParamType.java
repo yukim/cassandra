@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.net;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,7 +26,11 @@ import javax.annotation.Nullable;
 
 import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.telemetry.tracing.TraceContextSerializer;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 import static java.lang.Math.max;
@@ -54,7 +60,25 @@ public enum ParamType
     TRACE_TYPE          (6, "TraceType",     Tracing.traceTypeSerializer),
 
     @Deprecated
-    TRACK_REPAIRED_DATA (7, "TrackRepaired", LegacyFlag.serializer);
+    TRACK_REPAIRED_DATA (7, "TrackRepaired", LegacyFlag.serializer),
+
+    TRACE_CONTEXT(14, "TC", TraceContextSerializer.serializer),
+    CUSTOM(15, "Custom", new IVersionedSerializer<ByteBuffer>() {
+        @Override
+        public void serialize(ByteBuffer t, DataOutputPlus out, int version) throws IOException {
+            ByteBufferUtil.writeWithShortLength(t, out);
+        }
+
+        @Override
+        public ByteBuffer deserialize(DataInputPlus in, int version) throws IOException {
+            return ByteBufferUtil.readWithShortLength(in);
+        }
+
+        @Override
+        public long serializedSize(ByteBuffer t, int version) {
+            return ByteBufferUtil.serializedSizeWithShortLength(t);
+        }
+    });
 
     final int id;
     @Deprecated final String legacyAlias; // pre-4.0 we used to serialize entire param name string

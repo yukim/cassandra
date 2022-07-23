@@ -45,6 +45,7 @@ import javax.management.NotificationListener;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import io.opentelemetry.context.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -433,7 +434,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         TraceState state = Tracing.instance.initializeFromMessage(header);
         if (state != null) state.trace("{} message received from {}", header.verb, header.from);
         header.verb.stage.execute(() -> MessagingService.instance().inboundSink.accept(messageIn),
-                                  ExecutorLocals.create(state));
+                                  ExecutorLocals.create(state, Context.current()));
     }
 
     public int getMessagingVersion()

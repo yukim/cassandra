@@ -669,6 +669,10 @@
             <exclusion groupId="org.hamcrest" artifactId="hamcrest"/>
           </dependency>
           <dependency groupId="org.hamcrest" artifactId="hamcrest" version="2.2" scope="test"/>
+          <dependency groupId="io.opentelemetry" artifactId="opentelemetry-bom" version="1.15.0" type="pom" scope="import" />
+          <dependency groupId="io.opentelemetry" artifactId="opentelemetry-bom-alpha" version="1.15.0-alpha" type="pom" scope="import" />
+          <dependency groupId="io.opentelemetry.instrumentation" artifactId="opentelemetry-instrumentation-bom-alpha" version="1.15.0-alpha" type="pom" scope="import" />
+          <dependency groupId="io.grpc" artifactId="grpc-bom" version="1.44.0" type="pom" scope="import" />
         </dependencyManagement>
         <developer id="adelapena" name="Andres de la Peña"/>
         <developer id="alakshman" name="Avinash Lakshman"/>
@@ -840,6 +844,13 @@
         <dependency groupId="org.jboss.byteman" artifactId="byteman"/>
         <dependency groupId="org.jboss.byteman" artifactId="byteman-submit"/>
         <dependency groupId="org.jboss.byteman" artifactId="byteman-bmunit"/>
+        <dependency groupId="io.opentelemetry" artifactId="opentelemetry-api" />
+        <dependency groupId="io.opentelemetry" artifactId="opentelemetry-sdk" />
+        <dependency groupId="io.opentelemetry" artifactId="opentelemetry-sdk-extension-autoconfigure" />
+        <dependency groupId="io.opentelemetry" artifactId="opentelemetry-exporter-otlp" scope="runtime" />
+        <dependency groupId="io.opentelemetry" artifactId="opentelemetry-exporter-otlp-logs" scope="runtime" />
+        <dependency groupId="io.opentelemetry.instrumentation" artifactId="opentelemetry-runtime-metrics" />
+        <dependency groupId="io.opentelemetry.instrumentation" artifactId="opentelemetry-logback-appender-1.0" />
       </artifact:pom>
     </target>
 

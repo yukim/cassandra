@@ -19,6 +19,7 @@ package org.apache.cassandra.transport;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.EnumSet;
 import java.util.List;
@@ -30,6 +31,11 @@ import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import org.apache.cassandra.telemetry.Telemetry;
+import org.apache.cassandra.telemetry.tracing.CustomPayloadGetter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -214,12 +220,25 @@ public abstract class Message
             return false;
         }
 
+        protected Span createSpan(InetAddress clientAddress, Context context) {
+            return Span.getInvalid();
+        }
+
+        /**
+         * @return true if warnings should be tracked and aborts enforced for resource limits on this {@link Request}
+         */
+        protected boolean isTrackable()
+        {
+            return false;
+        }
+
         protected abstract Response execute(QueryState queryState, long queryStartNanoTime, boolean traceRequest);
 
         public final Response execute(QueryState queryState, long queryStartNanoTime)
         {
             boolean shouldTrace = false;
             UUID tracingSessionId = null;
+            Span requestSpan = Span.getInvalid();
 
             if (isTraceable())
             {
@@ -234,15 +253,31 @@ public abstract class Message
                     shouldTrace = true;
                     Tracing.instance.newSession(getCustomPayload());
                 }
+
+                // Try getting OpenTelemetry tracing context from custom payload
+                // This depends on W3C Tracing Context propagator, which is default for OpenTelemetry SDK
+                Context context = Telemetry.getOpenTelemetry()
+                        .getPropagators()
+                        .getTextMapPropagator()
+                        .extract(Context.current(), getCustomPayload(), CustomPayloadGetter.instance);
+                // Create the request span
+                requestSpan = createSpan(queryState.getClientAddress(), context);
             }
 
             Response response;
-            try
+            // OpenTelemetry Context will be held in ExecutorLocals through Context#markCurrent() call
+            try (Scope _scope = requestSpan.makeCurrent())
             {
                 response = execute(queryState, queryStartNanoTime, shouldTrace);
             }
+            catch (Throwable e)
+            {
+                requestSpan.recordException(e);
+                throw e;
+            }
             finally
             {
+                requestSpan.end();
                 if (shouldTrace)
                     Tracing.instance.stopSession();
             }

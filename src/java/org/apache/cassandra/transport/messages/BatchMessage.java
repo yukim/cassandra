@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.transport.messages;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +25,13 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableMap;
 
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import org.apache.cassandra.telemetry.Telemetry;
+import org.apache.cassandra.utils.FBUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -234,6 +242,47 @@ public class BatchMessage extends Message.Request
             JVMStabilityInspector.inspectThrowable(e);
             return ErrorMessage.fromException(e);
         }
+    }
+
+    @Override
+    protected Span createSpan(InetAddress clientAddress, Context context) {
+        QueryHandler handler = ClientState.getCQLQueryHandler();
+        List<String> queries = new ArrayList<>(queryOrIdList.size());
+        for (Object query : queryOrIdList)
+        {
+            QueryHandler.Prepared p;
+            if (query instanceof String)
+            {
+                queries.add((String) query);
+            }
+            else
+            {
+                p = handler.getPrepared((MD5Digest)query);
+                if (p != null) {
+                    queries.add(p.rawCQLStatement);
+                }
+                else
+                {
+                    // When the prepared statement cannot be found, return early without actual Span
+                    return Span.getInvalid();
+                }
+            }
+        }
+
+        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(String.join("|", queries));
+        spanBuilder.setSpanKind(SpanKind.SERVER);
+        spanBuilder.setParent(context);
+        AttributesBuilder attributes = io.opentelemetry.api.common.Attributes.builder();
+        attributes.put("type", type.name());
+        attributes.put("client", clientAddress.toString());
+        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        if (options.getPageSize() > 0)
+            attributes.put("page_size", Integer.toString(options.getPageSize()));
+        if (options.getConsistency() != null)
+            attributes.put("consistency_level", options.getConsistency().name());
+        if (options.getSerialConsistency() != null)
+            attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+        return spanBuilder.setAllAttributes(attributes.build()).startSpan();
     }
 
     private void traceQuery(QueryState state)

@@ -44,6 +44,10 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.collect.Iterables;
 import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.Uninterruptibles;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1965,6 +1969,8 @@ public class StorageProxy implements StorageProxyMBean
         private final ReadCallback handler;
         private final boolean trackRepairedStatus;
 
+        private final Context context;
+
         public LocalReadRunnable(ReadCommand command, ReadCallback handler)
         {
             this(command, handler, false);
@@ -1972,15 +1978,22 @@ public class StorageProxy implements StorageProxyMBean
 
         public LocalReadRunnable(ReadCommand command, ReadCallback handler, boolean trackRepairedStatus)
         {
+            this(command, handler, false, Context.current());
+        }
+
+        public LocalReadRunnable(ReadCommand command, ReadCallback handler, boolean trackRepairedStatus, Context context)
+        {
             super(Verb.READ_REQ);
             this.command = command;
             this.handler = handler;
             this.trackRepairedStatus = trackRepairedStatus;
+            this.context = context;
         }
 
         protected void runMayThrow()
         {
-            try
+            Span localReadSpan = Telemetry.getRequestTracer().spanBuilder("Local Read Request").setParent(context).startSpan();
+            try (Scope scope = localReadSpan.makeCurrent())
             {
                 command.setMonitoringTime(approxCreationTimeNanos, false, verb.expiresAfterNanos(), DatabaseDescriptor.getSlowQueryTimeout(NANOSECONDS));
 
@@ -2005,6 +2018,7 @@ public class StorageProxy implements StorageProxyMBean
             }
             catch (Throwable t)
             {
+                localReadSpan.recordException(t);
                 if (t instanceof TombstoneOverwhelmingException)
                 {
                     handler.onFailure(FBUtilities.getBroadcastAddressAndPort(), RequestFailureReason.READ_TOO_MANY_TOMBSTONES);
@@ -2015,6 +2029,10 @@ public class StorageProxy implements StorageProxyMBean
                     handler.onFailure(FBUtilities.getBroadcastAddressAndPort(), RequestFailureReason.UNKNOWN);
                     throw t;
                 }
+            }
+            finally
+            {
+                localReadSpan.end();
             }
         }
     }
@@ -2295,13 +2313,17 @@ public class StorageProxy implements StorageProxyMBean
 
         private final Replica localReplica;
 
+        private final Context context;
+
         LocalMutationRunnable(Replica localReplica)
         {
             this.localReplica = localReplica;
+            this.context = Context.current();
         }
 
         public final void run()
         {
+            Span localMutationSpan = Telemetry.getRequestTracer().spanBuilder(LocalMutationRunnable.class.getSimpleName()).setParent(context).startSpan();
             final Verb verb = verb();
             long nowNanos = MonotonicClock.approxTime.now();
             long expirationTimeNanos = verb.expiresAtNanos(approxCreationTimeNanos);
@@ -2314,20 +2336,32 @@ public class StorageProxy implements StorageProxyMBean
                 {
                     protected void runMayThrow() throws Exception
                     {
-                        LocalMutationRunnable.this.runMayThrow();
+                        try (Scope scope = localMutationSpan.makeCurrent())
+                        {
+                            LocalMutationRunnable.this.runMayThrow();
+                        }
+                        finally
+                        {
+                            localMutationSpan.end();
+                        }
                     }
                 };
                 submitHint(runnable);
                 return;
             }
 
-            try
+            try (Scope scope = localMutationSpan.makeCurrent())
             {
                 runMayThrow();
             }
             catch (Exception e)
             {
+                localMutationSpan.recordException(e);
                 throw new RuntimeException(e);
+            }
+            finally
+            {
+                localMutationSpan.end();
             }
         }
 

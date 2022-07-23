@@ -30,6 +30,8 @@ import javax.annotation.Nullable;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.primitives.Ints;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -232,7 +234,7 @@ public class Message<T>
         if (expiresAtNanos == 0)
             expiresAtNanos = verb.expiresAtNanos(createdAtNanos);
 
-        return new Message<>(new Header(id, verb, from, createdAtNanos, expiresAtNanos, flags, buildParams(paramType, paramValue)), payload);
+        return new Message<>(new Header(id, verb, from, createdAtNanos, expiresAtNanos, flags, buildParams(paramType, paramValue, verb.isResponse())), payload);
     }
 
     public static <T> Message<T> internalResponse(Verb verb, T payload)
@@ -276,17 +278,27 @@ public class Message<T>
 
     private static final EnumMap<ParamType, Object> NO_PARAMS = new EnumMap<>(ParamType.class);
 
-    private static Map<ParamType, Object> buildParams(ParamType type, Object value)
+    private static Map<ParamType, Object> buildParams(ParamType type, Object value, boolean isResponse)
     {
         Map<ParamType, Object> params = NO_PARAMS;
-        if (Tracing.isTracing())
+        // Legacy Tracing
+        if (Tracing.isTracing() && Tracing.instance.get() != null)
+        {
             params = Tracing.instance.addTraceHeaders(new EnumMap<>(ParamType.class));
+        }
 
         if (type != null)
         {
             if (params.isEmpty())
                 params = new EnumMap<>(ParamType.class);
             params.put(type, value);
+        }
+        // OpenTelemetry tracing
+        if (Span.current().isRecording() && !isResponse)
+        {
+            if (params.isEmpty())
+                params = new EnumMap<>(ParamType.class);
+            params.put(ParamType.TRACE_CONTEXT, Context.current());
         }
 
         return params;
@@ -422,6 +434,11 @@ public class Message<T>
         public TraceType traceType()
         {
             return (TraceType) params.getOrDefault(ParamType.TRACE_TYPE, TraceType.QUERY);
+        }
+
+        public Context traceContext()
+        {
+            return (Context) params.getOrDefault(ParamType.TRACE_CONTEXT, Context.current());
         }
     }
 
