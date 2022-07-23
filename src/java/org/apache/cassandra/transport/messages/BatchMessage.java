@@ -245,7 +245,8 @@ public class BatchMessage extends Message.Request
     }
 
     @Override
-    protected Span createSpan(InetAddress clientAddress, Context context) {
+    protected Span createSpan(InetAddress clientAddress, Context context)
+    {
         QueryHandler handler = ClientState.getCQLQueryHandler();
         List<String> queries = new ArrayList<>(queryOrIdList.size());
         for (Object query : queryOrIdList)
@@ -258,7 +259,8 @@ public class BatchMessage extends Message.Request
             else
             {
                 p = handler.getPrepared((MD5Digest)query);
-                if (p != null) {
+                if (p != null)
+                {
                     queries.add(p.rawCQLStatement);
                 }
                 else
@@ -274,7 +276,10 @@ public class BatchMessage extends Message.Request
         spanBuilder.setParent(context);
         AttributesBuilder attributes = io.opentelemetry.api.common.Attributes.builder();
         attributes.put("type", type.name());
-        attributes.put("client", clientAddress.toString());
+        if (clientAddress != null)
+        {
+            attributes.put("client", clientAddress.toString());
+        }
         attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
         if (options.getPageSize() > 0)
             attributes.put("page_size", Integer.toString(options.getPageSize()));

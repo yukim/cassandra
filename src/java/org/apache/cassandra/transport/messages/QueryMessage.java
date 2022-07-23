@@ -134,13 +134,17 @@ public class QueryMessage extends Message.Request
     }
 
     @Override
-    protected Span createSpan(InetAddress clientAddress, Context context) {
+    protected Span createSpan(InetAddress clientAddress, Context context)
+    {
         SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(query);
         spanBuilder.setSpanKind(SpanKind.SERVER);
         spanBuilder.setParent(context);
         AttributesBuilder attributes = Attributes.builder();
         attributes.put("type", type.name());
-        attributes.put("client", clientAddress.toString());
+        if (clientAddress != null)
+        {
+            attributes.put("client", clientAddress.toString());
+        }
         attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
         if (options.getPageSize() > 0)
             attributes.put("page_size", Integer.toString(options.getPageSize()));

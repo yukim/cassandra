@@ -127,7 +127,10 @@ public class PrepareMessage extends Message.Request
         spanBuilder.setParent(context);
         AttributesBuilder attributes = Attributes.builder();
         attributes.put("type", type.name());
-        attributes.put("client", clientAddress.toString());
+        if (clientAddress != null)
+        {
+            attributes.put("client", clientAddress.toString());
+        }
         attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
         return spanBuilder.setAllAttributes(attributes.build()).startSpan();
     }

@@ -220,7 +220,8 @@ public abstract class Message
             return false;
         }
 
-        protected Span createSpan(InetAddress clientAddress, Context context) {
+        protected Span createSpan(InetAddress clientAddress, Context context)
+        {
             return Span.getInvalid();
         }
 
