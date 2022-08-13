@@ -46,12 +46,11 @@ public final class Telemetry
         {
             otel = AutoConfiguredOpenTelemetrySdk.builder().addResourceCustomizer((r, config) ->
                 r.toBuilder()
-                        .put("cassandra.cluster.name", DatabaseDescriptor.getClusterName())
                         .put("service.namespace", DatabaseDescriptor.getClusterName())
-                        .put("cassandra.address", InetAddressAndPort.getLocalHost().toString())
                         // This may be a host ID
                         .put("service.instance.id", InetAddressAndPort.getLocalHost().toString())
                         .put("service.version", FBUtilities.getReleaseVersionString())
+                        .put("cassandra.endpoint", InetAddressAndPort.getLocalHost().toString())
                         .build()
             ).build().getOpenTelemetrySdk();
             // Metrics

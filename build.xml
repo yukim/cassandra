@@ -669,10 +669,9 @@
             <exclusion groupId="org.hamcrest" artifactId="hamcrest"/>
           </dependency>
           <dependency groupId="org.hamcrest" artifactId="hamcrest" version="2.2" scope="test"/>
-          <dependency groupId="io.opentelemetry" artifactId="opentelemetry-bom" version="1.15.0" type="pom" scope="import" />
-          <dependency groupId="io.opentelemetry" artifactId="opentelemetry-bom-alpha" version="1.15.0-alpha" type="pom" scope="import" />
-          <dependency groupId="io.opentelemetry.instrumentation" artifactId="opentelemetry-instrumentation-bom-alpha" version="1.15.0-alpha" type="pom" scope="import" />
-          <dependency groupId="io.grpc" artifactId="grpc-bom" version="1.44.0" type="pom" scope="import" />
+          <dependency groupId="io.opentelemetry" artifactId="opentelemetry-bom" version="1.16.0" type="pom" scope="import" />
+          <dependency groupId="io.opentelemetry" artifactId="opentelemetry-bom-alpha" version="1.16.0-alpha" type="pom" scope="import" />
+          <dependency groupId="io.opentelemetry.instrumentation" artifactId="opentelemetry-instrumentation-bom-alpha" version="1.16.0-alpha" type="pom" scope="import" />
         </dependencyManagement>
         <developer id="adelapena" name="Andres de la Peña"/>
         <developer id="alakshman" name="Avinash Lakshman"/>
