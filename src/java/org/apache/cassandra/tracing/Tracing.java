@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentMap;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.apache.cassandra.telemetry.ContextHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -332,7 +333,9 @@ public abstract class Tracing implements ExecutorLocal<TraceState>
     // normal traces get zero-, one-, and two-argument overloads so common case doesn't need to create varargs array
     public static void trace(String message)
     {
-        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Attributes attr = Attributes.builder()
+                .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName()).build();
         Span.current().addEvent(message, attr);
         final TraceState state = instance.get();
         if (state == null) // inline isTracing to avoid implicit two calls to state.get()
@@ -344,7 +347,9 @@ public abstract class Tracing implements ExecutorLocal<TraceState>
     public static void trace(String format, Object arg)
     {
         String message = MessageFormatter.format(format, arg).getMessage();
-        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Attributes attr = Attributes.builder()
+                .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName()).build();
         Span.current().addEvent(message, attr);
 
         final TraceState state = instance.get();
@@ -357,7 +362,9 @@ public abstract class Tracing implements ExecutorLocal<TraceState>
     public static void trace(String format, Object arg1, Object arg2)
     {
         String message = MessageFormatter.format(format, arg1, arg2).getMessage();
-        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Attributes attr = Attributes.builder()
+                .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName()).build();
         Span.current().addEvent(message, attr);
 
         final TraceState state = instance.get();
@@ -370,7 +377,9 @@ public abstract class Tracing implements ExecutorLocal<TraceState>
     public static void trace(String format, Object... args)
     {
         String message = MessageFormatter.arrayFormat(format, args).getMessage();
-        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Attributes attr = Attributes.builder()
+                .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName()).build();
         Span.current().addEvent(message, attr);
 
         final TraceState state = instance.get();

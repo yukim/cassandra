@@ -40,6 +40,7 @@ import org.apache.cassandra.cql3.statements.BatchStatement;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.telemetry.CassandraSemanticAttributes;
 import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.CBUtil;
@@ -131,34 +132,24 @@ public class ExecuteMessage extends Message.Request
         QueryHandler.Prepared prepared = ClientState.getCQLQueryHandler().getPrepared(statementId);
         if (prepared != null)
         {
-            SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(prepared.rawCQLStatement);
+            SpanBuilder spanBuilder = Telemetry.getQueryTracer().spanBuilder(prepared.rawCQLStatement);
             spanBuilder.setSpanKind(SpanKind.SERVER);
             spanBuilder.setParent(context);
             AttributesBuilder attributes = Attributes.builder();
-            attributes.put("type", type.name());
+            attributes.put(CassandraSemanticAttributes.QUERY_MESSAGE_TYPE, type.name());
             if (clientAddress != null)
             {
-                attributes.put("client", clientAddress.toString());
+                attributes.put(CassandraSemanticAttributes.QUERY_CLIENT_IP, clientAddress.toString());
             }
-            attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+            attributes.put(CassandraSemanticAttributes.QUERY_COORDINATOR_IP, FBUtilities.getBroadcastNativeAddressAndPort().address.getHostAddress());
+            attributes.put(CassandraSemanticAttributes.QUERY_COORDINATOR_PORT, FBUtilities.getBroadcastNativeAddressAndPort().port);
             if (options.getPageSize() > 0)
-                attributes.put("page_size", Integer.toString(options.getPageSize()));
+                attributes.put(CassandraSemanticAttributes.QUERY_PAGE_SIZE, options.getPageSize());
             if (options.getConsistency() != null)
-                attributes.put("consistency_level", options.getConsistency().name());
+                attributes.put(CassandraSemanticAttributes.QUERY_CONSISTENCY_LEVEL, options.getConsistency().name());
             if (options.getSerialConsistency() != null)
-                attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+                attributes.put(CassandraSemanticAttributes.QUERY_SERIAL_CONSISTENCY_LEVEL, options.getSerialConsistency().name());
 
-            for (int i = 0; i < prepared.statement.getBindVariables().size(); i++) {
-                ColumnSpecification cs = prepared.statement.getBindVariables().get(i);
-                String boundName = cs.name.toString();
-                String boundValue = cs.type.asCQL3Type().toCQLLiteral(options.getValues().get(i), options.getProtocolVersion());
-                if (boundValue.length() > 1000)
-                    boundValue = boundValue.substring(0, 1000) + "...'";
-
-                //Here we prefix boundName with the index to avoid possible collission in builder keys due to
-                //having multiple boundValues for the same variable
-                attributes.put("bound_var_" + i + '_' + boundName, boundValue);
-            }
             return spanBuilder.setAllAttributes(attributes.build()).startSpan();
         }
         else

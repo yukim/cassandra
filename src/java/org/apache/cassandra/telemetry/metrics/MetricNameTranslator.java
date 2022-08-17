@@ -54,117 +54,113 @@ public class MetricNameTranslator
         LinkedHashMap<Pattern, Function<MatchResult, MetricParams>> configBuilder = new LinkedHashMap<>();
         // Table Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Table\\.(\\w+)\\.(\\w+)\\.(\\w+)"),
-                (group) -> MetricParams.builder("table_" + toSnakeCase(group.group(1)))
-                            .put("cassandra.keyspace", group.group(2))
-                            .put("cassandra.table", group.group(3))
+                (group) -> MetricParams.builder("cassandra." + toSnakeCase(group.group(1)) + ".by_table")
+                            .put("cassandra.keyspace.name", group.group(2))
+                            .put("cassandra.table.name", group.group(3))
                             .build()
         );
         // Keyspace Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Keyspace\\.(\\w+)\\.(\\w+)"),
-                (group) -> MetricParams.builder("keyspace_" + toSnakeCase(group.group(1)))
-                        .put("cassandra.keyspace", group.group(2))
+                (group) -> MetricParams.builder("cassandra." + toSnakeCase(group.group(1)) + ".by_keyspace")
+                        .put("cassandra.keyspace.name", group.group(2))
                         .build()
         );
-        // ThreadPool Metrics (one type is repair.task so we just ignore the second part)
+        // ThreadPool Metrics (one type is repair.task, so we just ignore the second part)
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.ThreadPools\\.(\\w+)\\.(\\w+)\\.(\\w+).*"),
-                (group) -> MetricParams.builder("thread_pools_" + toSnakeCase(group.group(1)))
-                        .put("cassandra.pool_type", group.group(2))
-                        .put("cassandra.pool_name", group.group(3))
+                (group) -> MetricParams.builder("cassandra.thread_pool." + toSnakeCase(group.group(1)))
+                        .put("cassandra.thread_pool.type", group.group(2))
+                        .put("cassandra.thread_pool.name", group.group(3))
                         .build()
         );
         // ClientRequest Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.ClientRequest\\.(\\w+)\\.(\\w+)$"),
-                (group) -> MetricParams.builder("client_request_" + toSnakeCase(group.group(1)))
+                (group) -> MetricParams.builder("cassandra.client_request." + toSnakeCase(group.group(1)))
                         .put("cassandra.request_type", group.group(2))
                         .build()
         );
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.ClientRequest\\.(\\w+)\\.(\\w+)-(\\w+)$"),
-                (group) -> MetricParams.builder("client_request_" + toSnakeCase(group.group(1)) + "_cl")
+                (group) -> MetricParams.builder("cassandra.client_request." + toSnakeCase(group.group(1)) + ".by_cl")
                         .put("cassandra.request_type", group.group(2))
                         .put("cassandra.cl", group.group(3))
                         .build()
         );
         // Cache Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Cache\\.(\\w+)\\.(\\w+)"),
-                (group) -> MetricParams.builder("cache_" + toSnakeCase(group.group(1)))
-                        .put("cassandra.cache_name", group.group(2))
+                (group) -> MetricParams.builder("cassandra.cache." + toSnakeCase(group.group(1)))
+                        .put("cassandra.cache.name", group.group(2))
                         .build()
         );
         // CQL Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.CQL\\.(\\w+)"),
-                (group) -> MetricParams.builder("cql_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.cql." + toSnakeCase(group.group(1))).build()
         );
         // Dropped Message Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.DroppedMessage\\.(\\w+)\\.(\\w+)"),
-                (group) -> MetricParams.builder("dropped_message_" + toSnakeCase(group.group(1)))
+                (group) -> MetricParams.builder("cassandra.dropped_message." + toSnakeCase(group.group(1)))
                         .put("cassandra.message_type", group.group(2))
                         .build()
         );
         // Streaming Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Streaming\\.(\\w+)\\.(.+)"),
-                (group) -> MetricParams.builder("streaming_" + toSnakeCase(group.group(1)))
+                (group) -> MetricParams.builder("cassandra.streaming." + toSnakeCase(group.group(1)))
                         .put("cassandra.peer_ip", group.group(2))
                         .build()
         );
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Streaming\\.(\\w+)$"),
-                (group) -> MetricParams.builder("streaming_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.streaming." + toSnakeCase(group.group(1))).build()
+        );
+        // Inbound Connection Metrics
+        configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.InboundConnection\\.(\\w+)\\.(.+)"),
+                (group) -> MetricParams.builder("cassandra.inbound_connection." + toSnakeCase(group.group(1)))
+                        .put("cassandra.peer_ip", group.group(2))
+                        .build()
         );
         // CommitLog Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.CommitLog\\.(\\w+)"),
-                (group) -> MetricParams.builder("commit_log_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.commit_log." + toSnakeCase(group.group(1))).build()
         );
         // Compaction Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Compaction\\.(\\w+)"),
-                (group) -> MetricParams.builder("compaction_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.compaction." + toSnakeCase(group.group(1))).build()
         );
         // Storage Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Storage\\.(\\w+)"),
-                (group) -> MetricParams.builder("storage_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.storage." + toSnakeCase(group.group(1))).build()
         );
         // Batch Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Batch\\.(\\w+)"),
-                (group) -> MetricParams.builder("batch_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.batch." + toSnakeCase(group.group(1))).build()
         );
         // Client Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Client\\.(\\w+)"),
-                (group) -> MetricParams.builder("client_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.client." + toSnakeCase(group.group(1))).build()
         );
         // BufferPool Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.BufferPool\\.(\\w+)"),
-                (group) -> MetricParams.builder("buffer_pool_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.buffer_pool." + toSnakeCase(group.group(1))).build()
         );
-        // Index Metrics
-        configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Index\\.(\\w+)"),
-                (group) -> MetricParams.builder("sstable_index_" + toSnakeCase(group.group(1))).build()
+        // RowIndexEntry Metrics
+        configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.Index\\.RowIndexEntry\\.(\\w+)"),
+                (group) -> MetricParams.builder("cassandra.row_index_entry." + toSnakeCase(group.group(1))).build()
         );
         // Hint Metrics
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.HintsService\\.Hint_delays-(\\w+)"),
-                (group) -> MetricParams.builder("hint_delays")
+                (group) -> MetricParams.builder("cassandra.hints.hint_delays")
                         .put("cassandra.peer_ip", group.group(1))
                         .build()
         );
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.HintsService\\.Hints_created-(\\w+)"),
-                (group) -> MetricParams.builder("hints_created")
+                (group) -> MetricParams.builder("cassandra.hints.hints_created")
                         .put("cassandra.peer_ip", group.group(1))
                         .build()
         );
         configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.HintsService\\.([^-]+)"),
-                (group) -> MetricParams.builder("hints_" + toSnakeCase(group.group(1))).build()
+                (group) -> MetricParams.builder("cassandra.hints." + toSnakeCase(group.group(1))).build()
         );
         // Misc
-        //     *      - source_labels: ["mcac"]
-        //  *        regex: org\.apache\.cassandra\.metrics\.memtable_pool\.(\w+)
-        //  *        target_label: __name__
-        //     *        replacement: mcac_memtable_pool_${1}
-        //  *      - source_labels: ["mcac"]
-        //     *      - source_labels: ["mcac"]
-        //  *        regex: org\.apache\.cassandra\.metrics\.read_coordination\.(.*)
-        //  *        target_label: read_type
-        //     *        replacement: $1
-        //     *      - source_labels: ["mcac"]
-        //  *        regex: org\.apache\.cassandra\.metrics\.read_coordination\.(.*)
-        //  *        target_label: __name__
-        //     *        replacement: mcac_read_coordination_requests
+        configBuilder.put(Pattern.compile("org\\.apache\\.cassandra\\.metrics\\.MemtablePool\\.(\\w+)"),
+                (group) -> MetricParams.builder("cassandra.memtable_pool." + toSnakeCase(group.group(1))).build()
+        );
         config = Collections.unmodifiableMap(configBuilder);
     }
 

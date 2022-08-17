@@ -27,6 +27,8 @@ import io.opentelemetry.instrumentation.runtimemetrics.MemoryPools;
 import io.opentelemetry.instrumentation.runtimemetrics.Threads;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
+import io.opentelemetry.semconv.resource.attributes.ResourceAttributes;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
@@ -38,6 +40,8 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public final class Telemetry
 {
+    private static final String DEFAULT_SERVICE_NAME = "cassandra";
+
     private static final OpenTelemetry otel;
 
     static
@@ -46,15 +50,17 @@ public final class Telemetry
         {
             otel = AutoConfiguredOpenTelemetrySdk.builder().addResourceCustomizer((r, config) ->
                 r.toBuilder()
-                        .put("service.namespace", DatabaseDescriptor.getClusterName())
-                        // This may be a host ID
-                        .put("service.instance.id", InetAddressAndPort.getLocalHost().toString())
-                        .put("service.version", FBUtilities.getReleaseVersionString())
-                        .put("cassandra.endpoint", InetAddressAndPort.getLocalHost().toString())
+                        .put(ResourceAttributes.SERVICE_NAME, DEFAULT_SERVICE_NAME)
+                        .put(ResourceAttributes.SERVICE_NAMESPACE, DatabaseDescriptor.getClusterName())
+                        .put(ResourceAttributes.SERVICE_INSTANCE_ID, InetAddressAndPort.getLocalHost().toString())
+                        .put(ResourceAttributes.SERVICE_VERSION, FBUtilities.getReleaseVersionString())
+                        .put(SemanticAttributes.NET_HOST_NAME, FBUtilities.getBroadcastAddressAndPort().address.getHostName())
+                        .put(SemanticAttributes.NET_HOST_IP, FBUtilities.getBroadcastAddressAndPort().address.getHostAddress())
+                        .put(SemanticAttributes.NET_HOST_PORT, FBUtilities.getBroadcastAddressAndPort().port)
                         .build()
             ).build().getOpenTelemetrySdk();
             // Metrics
-            CassandraMetricsRegistry.Metrics.addListener(new OpenTelemetryMetricRegistryListener(otel.getMeter("org.apache.cassandra.metrics")));
+            CassandraMetricsRegistry.Metrics.addListener(new OpenTelemetryMetricRegistryListener(otel.getMeter("cassandra.metrics")));
             // Add JVM metrices
             Cpu.registerObservers(otel);
             GarbageCollector.registerObservers(otel);
@@ -69,7 +75,7 @@ public final class Telemetry
         }
     }
 
-    private static final Tracer requestTracer = otel.getTracer("org.apache.cassandra.request");
+    private static final Tracer queryTracer = otel.getTracer("cassandra.query");
 
     private Telemetry() {}
 
@@ -83,8 +89,8 @@ public final class Telemetry
      *
      * @return Client request {@link Tracer}
      */
-    public static Tracer getRequestTracer()
+    public static Tracer getQueryTracer()
     {
-        return requestTracer;
+        return queryTracer;
     }
 }

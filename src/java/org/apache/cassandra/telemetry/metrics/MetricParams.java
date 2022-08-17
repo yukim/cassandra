@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.telemetry.metrics;
 
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 
@@ -68,6 +69,12 @@ public class MetricParams
         private Builder(String metricName)
         {
             this.metricName = metricName;
+        }
+
+        public <T> Builder put(AttributeKey<T> key, T value)
+        {
+            attributesBuilder.put(key, value);
+            return this;
         }
 
         public Builder put(String key, String value)

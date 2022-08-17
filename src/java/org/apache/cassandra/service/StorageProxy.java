@@ -44,9 +44,11 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.collect.Iterables;
 import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.Uninterruptibles;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -1992,7 +1994,15 @@ public class StorageProxy implements StorageProxyMBean
 
         protected void runMayThrow()
         {
-            Span localReadSpan = Telemetry.getRequestTracer().spanBuilder("Local Read Request").setParent(context).startSpan();
+            Attributes attributes = Attributes.builder()
+                    .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                    .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName())
+                    .build();
+            Span localReadSpan = Telemetry.getQueryTracer()
+                    .spanBuilder(FBUtilities.getBroadcastAddressAndPort().toString())
+                    .setParent(context)
+                    .setAllAttributes(attributes)
+                    .startSpan();
             try (Scope scope = localReadSpan.makeCurrent())
             {
                 command.setMonitoringTime(approxCreationTimeNanos, false, verb.expiresAfterNanos(), DatabaseDescriptor.getSlowQueryTimeout(NANOSECONDS));
@@ -2323,7 +2333,15 @@ public class StorageProxy implements StorageProxyMBean
 
         public final void run()
         {
-            Span localMutationSpan = Telemetry.getRequestTracer().spanBuilder(LocalMutationRunnable.class.getSimpleName()).setParent(context).startSpan();
+            Attributes attributes = Attributes.builder()
+                    .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                    .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName())
+                    .build();
+            Span localMutationSpan = Telemetry.getQueryTracer()
+                    .spanBuilder(FBUtilities.getBroadcastAddressAndPort().toString())
+                    .setParent(context)
+                    .setAllAttributes(attributes)
+                    .startSpan();
             final Verb verb = verb();
             long nowNanos = MonotonicClock.approxTime.now();
             long expirationTimeNanos = verb.expiresAtNanos(approxCreationTimeNanos);

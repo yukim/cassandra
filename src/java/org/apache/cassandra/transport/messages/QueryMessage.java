@@ -34,6 +34,7 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.telemetry.CassandraSemanticAttributes;
 import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.CBUtil;
@@ -136,22 +137,23 @@ public class QueryMessage extends Message.Request
     @Override
     protected Span createSpan(InetAddress clientAddress, Context context)
     {
-        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(query);
+        SpanBuilder spanBuilder = Telemetry.getQueryTracer().spanBuilder(query);
         spanBuilder.setSpanKind(SpanKind.SERVER);
         spanBuilder.setParent(context);
         AttributesBuilder attributes = Attributes.builder();
-        attributes.put("type", type.name());
+        attributes.put(CassandraSemanticAttributes.QUERY_MESSAGE_TYPE, type.name());
         if (clientAddress != null)
         {
-            attributes.put("client", clientAddress.toString());
+            attributes.put(CassandraSemanticAttributes.QUERY_CLIENT_IP, clientAddress.toString());
         }
-        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        attributes.put(CassandraSemanticAttributes.QUERY_COORDINATOR_IP, FBUtilities.getBroadcastNativeAddressAndPort().address.getHostAddress());
+        attributes.put(CassandraSemanticAttributes.QUERY_COORDINATOR_PORT, FBUtilities.getBroadcastNativeAddressAndPort().port);
         if (options.getPageSize() > 0)
-            attributes.put("page_size", Integer.toString(options.getPageSize()));
+            attributes.put(CassandraSemanticAttributes.QUERY_PAGE_SIZE, options.getPageSize());
         if (options.getConsistency() != null)
-            attributes.put("consistency_level", options.getConsistency().name());
+            attributes.put(CassandraSemanticAttributes.QUERY_CONSISTENCY_LEVEL, options.getConsistency().name());
         if (options.getSerialConsistency() != null)
-            attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+            attributes.put(CassandraSemanticAttributes.QUERY_SERIAL_CONSISTENCY_LEVEL, options.getSerialConsistency().name());
         return spanBuilder.setAllAttributes(attributes.build()).startSpan();
     }
 

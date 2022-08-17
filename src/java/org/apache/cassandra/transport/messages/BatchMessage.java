@@ -21,7 +21,6 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableMap;
 
@@ -30,10 +29,9 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.context.Context;
+import org.apache.cassandra.telemetry.CassandraSemanticAttributes;
 import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.utils.FBUtilities;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
 import org.apache.cassandra.cql3.Attributes;
@@ -57,7 +55,6 @@ import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.MD5Digest;
-import org.apache.cassandra.utils.NoSpamLogger;
 
 public class BatchMessage extends Message.Request
 {
@@ -271,22 +268,23 @@ public class BatchMessage extends Message.Request
             }
         }
 
-        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(String.join("|", queries));
+        SpanBuilder spanBuilder = Telemetry.getQueryTracer().spanBuilder("Batch [" + String.join("|", queries) + ']');
         spanBuilder.setSpanKind(SpanKind.SERVER);
         spanBuilder.setParent(context);
         AttributesBuilder attributes = io.opentelemetry.api.common.Attributes.builder();
-        attributes.put("type", type.name());
+        attributes.put(CassandraSemanticAttributes.QUERY_MESSAGE_TYPE, type.name());
         if (clientAddress != null)
         {
-            attributes.put("client", clientAddress.toString());
+            attributes.put(CassandraSemanticAttributes.QUERY_CLIENT_IP, clientAddress.toString());
         }
-        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        attributes.put(CassandraSemanticAttributes.QUERY_COORDINATOR_IP, FBUtilities.getBroadcastNativeAddressAndPort().address.getHostAddress());
+        attributes.put(CassandraSemanticAttributes.QUERY_COORDINATOR_PORT, FBUtilities.getBroadcastNativeAddressAndPort().port);
         if (options.getPageSize() > 0)
-            attributes.put("page_size", Integer.toString(options.getPageSize()));
+            attributes.put(CassandraSemanticAttributes.QUERY_PAGE_SIZE, options.getPageSize());
         if (options.getConsistency() != null)
-            attributes.put("consistency_level", options.getConsistency().name());
+            attributes.put(CassandraSemanticAttributes.QUERY_CONSISTENCY_LEVEL, options.getConsistency().name());
         if (options.getSerialConsistency() != null)
-            attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+            attributes.put(CassandraSemanticAttributes.QUERY_SERIAL_CONSISTENCY_LEVEL, options.getSerialConsistency().name());
         return spanBuilder.setAllAttributes(attributes.build()).startSpan();
     }
 

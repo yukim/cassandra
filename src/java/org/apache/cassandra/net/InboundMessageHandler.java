@@ -27,7 +27,11 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
+import org.apache.cassandra.telemetry.CassandraSemanticAttributes;
+import org.apache.cassandra.telemetry.ContextHolder;
 import org.apache.cassandra.telemetry.Telemetry;
+import org.apache.cassandra.utils.FBUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,8 +43,6 @@ import org.apache.cassandra.exceptions.IncompatibleSchemaException;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.Message.Header;
-import org.apache.cassandra.net.FrameDecoder.Frame;
-import org.apache.cassandra.net.FrameDecoder.FrameProcessor;
 import org.apache.cassandra.net.FrameDecoder.IntactFrame;
 import org.apache.cassandra.net.FrameDecoder.CorruptFrame;
 import org.apache.cassandra.net.ResourceLimits.Limit;
@@ -399,23 +401,25 @@ public class InboundMessageHandler extends AbstractMessageHandler
     {
         Header header = task.header();
 
-        Context otelContext = header.traceContext();
-
         TraceState state = Tracing.instance.initializeFromMessage(header);
         if (state != null) state.trace("{} message received from {}", header.verb, header.from);
 
         callbacks.onDispatched(task.size(), header);
         header.verb.stage.execute(() -> {
+            Context context = ContextHolder.instance.get();
             // Create span only when SpanContext is from remote
-            Span span = Span.fromContext(otelContext);
+            Span span = Span.fromContext(context);
             if (span.getSpanContext().isRemote()) {
                 Attributes attributes = Attributes.builder()
-                        .put("verb", header.verb.name())
-                        .put("thread", Thread.currentThread().getName())
+                        .put(CassandraSemanticAttributes.NET_VERB, header.verb.name())
+                        .put(SemanticAttributes.NET_PEER_IP, header.from.address.toString())
+                        .put(SemanticAttributes.NET_PEER_PORT, header.from.port)
+                        .put(SemanticAttributes.THREAD_ID, Thread.currentThread().getId())
+                        .put(SemanticAttributes.THREAD_NAME, Thread.currentThread().getName())
                         .build();
-                span = Telemetry.getRequestTracer()
-                        .spanBuilder(header.verb + " message received from " + header.from)
-                        .setParent(otelContext)
+                span = Telemetry.getQueryTracer()
+                        .spanBuilder(FBUtilities.getBroadcastAddressAndPort().toString())
+                        .setParent(context)
                         .setAllAttributes(attributes)
                         .startSpan();
             }
@@ -424,7 +428,7 @@ public class InboundMessageHandler extends AbstractMessageHandler
             } finally {
                 span.end();
             }
-        }, ExecutorLocals.create(state, otelContext));
+        }, ExecutorLocals.create(state, header.traceContext()));
     }
 
     private abstract class ProcessMessage implements Runnable
