@@ -109,7 +109,12 @@ appender reference in the root level section below.
 
   <!-- Uncomment bellow and corresponding appender-ref to activate logback metrics
   <appender name="LogbackMetrics" class="com.codahale.metrics.logback.InstrumentedAppender" />
-   -->
+  -->
+
+  <!-- Appender for OpenTelemetry -->
+  <appender name="OpenTelemetry"
+            class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+  </appender>
 
   <root level="INFO">
     <appender-ref ref="SYSTEMLOG" />
@@ -118,6 +123,7 @@ appender reference in the root level section below.
     <!--
     <appender-ref ref="LogbackMetrics" />
     -->
+    <appender-ref ref="OpenTelemetry" />
   </root>
 
   <logger name="org.apache.cassandra" level="DEBUG"/>
