@@ -17,50 +17,30 @@
  */
 package org.apache.cassandra.service.paxos.v1;
 
-import org.apache.cassandra.utils.concurrent.CountDownLatch;
-
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.locator.ReplicaPlan;
 import org.apache.cassandra.net.RequestCallback;
-import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
-import static org.apache.cassandra.utils.concurrent.CountDownLatch.newCountDownLatch;
 
 public abstract class AbstractPaxosCallback<T> implements RequestCallback<T>
 {
-    protected final CountDownLatch latch;
-    protected final int targets;
-    private final ConsistencyLevel consistency;
+    protected final ReplicaPlan.ForPaxosWrite replicaPlan;
     private final long queryStartNanoTime;
 
-    public AbstractPaxosCallback(int targets, ConsistencyLevel consistency, long queryStartNanoTime)
+    public AbstractPaxosCallback(ReplicaPlan.ForPaxosWrite replicaPlan, long queryStartNanoTime)
     {
-        this.targets = targets;
-        this.consistency = consistency;
-        latch = newCountDownLatch(targets);
+        this.replicaPlan = replicaPlan;
         this.queryStartNanoTime = queryStartNanoTime;
-    }
-
-    public int getResponseCount()
-    {
-        return targets - latch.count();
     }
 
     public void await() throws WriteTimeoutException
     {
-        try
-        {
-            long timeout = DatabaseDescriptor.getWriteRpcTimeout(NANOSECONDS) - (nanoTime() - queryStartNanoTime);
-            if (!latch.await(timeout, NANOSECONDS))
-                throw new WriteTimeoutException(WriteType.CAS, consistency, getResponseCount(), targets);
-        }
-        catch (InterruptedException e)
-        {
-            throw new UncheckedInterruptedException(e);
-        }
+        long timeout = DatabaseDescriptor.getWriteRpcTimeout(NANOSECONDS) - (nanoTime() - queryStartNanoTime);
+        await(timeout);
     }
+
+    protected abstract void await(long timeout) throws WriteTimeoutException;
 }

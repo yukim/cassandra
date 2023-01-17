@@ -44,6 +44,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Uninterruptibles;
 
+import org.apache.cassandra.service.paxos.v1.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,8 +128,6 @@ import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.service.paxos.ContentionStrategy;
 import org.apache.cassandra.service.paxos.Paxos;
 import org.apache.cassandra.service.paxos.PaxosState;
-import org.apache.cassandra.service.paxos.v1.PrepareCallback;
-import org.apache.cassandra.service.paxos.v1.ProposeCallback;
 import org.apache.cassandra.service.reads.AbstractReadExecutor;
 import org.apache.cassandra.service.reads.ReadCallback;
 import org.apache.cassandra.service.reads.range.RangeCommands;
@@ -149,9 +148,9 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 import static com.google.common.collect.Iterables.concat;
+import static org.apache.cassandra.db.ConsistencyLevel.*;
 import static org.apache.commons.lang3.StringUtils.join;
 
-import static org.apache.cassandra.db.ConsistencyLevel.SERIAL;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.casReadMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.casWriteMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
@@ -457,8 +456,8 @@ public class StorageProxy implements StorageProxyMBean
      *
      * @param metadata the table to update with Paxos.
      * @param key the partition updated.
-     * @param consistencyForPaxos the serial consistency of the operation (either {@link ConsistencyLevel#SERIAL} or
-     *     {@link ConsistencyLevel#LOCAL_SERIAL}).
+     * @param consistencyForPaxos the serial consistency of the operation (either {@link ConsistencyLevel#SERIAL},
+     *                            {#link {@link ConsistencyLevel#EACH_SERIAL}} or {@link ConsistencyLevel#LOCAL_SERIAL}).
      * @param consistencyForReplayCommits the consistency for the commit phase of "replayed" in-progress operations.
      * @param consistencyForCommit the consistency for the commit phase of _this_ operation update.
      * @param queryStartNanoTime the nano time for the start of the query this is part of. This is the base time for
@@ -575,7 +574,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         long timeoutNanos = DatabaseDescriptor.getCasContentionTimeout(NANOSECONDS);
 
-        PrepareCallback summary = null;
+        AbstractPrepareCallback summary = null;
         int contentions = 0;
         while (nanoTime() - queryStartNanoTime < timeoutNanos)
         {
@@ -586,7 +585,7 @@ public class StorageProxy implements StorageProxyMBean
             long minTimestampMicrosToUse = summary == null ? Long.MIN_VALUE : 1 + summary.mostRecentInProgressCommit.ballot.unixMicros();
             // Note that ballotMicros is not guaranteed to be unique if two proposal are being handled concurrently by the same coordinator. But we still
             // need ballots to be unique for each proposal so we have to use getRandomTimeUUIDFromMicros.
-            Ballot ballot = nextBallot(minTimestampMicrosToUse, consistencyForPaxos == SERIAL ? GLOBAL : LOCAL);
+            Ballot ballot = nextBallot(minTimestampMicrosToUse, consistencyForPaxos == LOCAL_SERIAL ? LOCAL : GLOBAL);
 
             // prepare
             try
@@ -681,10 +680,13 @@ public class StorageProxy implements StorageProxyMBean
             MessagingService.instance().send(message, target);
     }
 
-    private static PrepareCallback preparePaxos(Commit toPrepare, ReplicaPlan.ForPaxosWrite replicaPlan, long queryStartNanoTime)
+    private static AbstractPrepareCallback preparePaxos(Commit toPrepare, ReplicaPlan.ForPaxosWrite replicaPlan, long queryStartNanoTime)
     throws WriteTimeoutException
     {
-        PrepareCallback callback = new PrepareCallback(toPrepare.update.partitionKey(), toPrepare.update.metadata(), replicaPlan.requiredParticipants(), replicaPlan.consistencyLevel(), queryStartNanoTime);
+        AbstractPrepareCallback callback = replicaPlan.consistencyLevel() == EACH_SERIAL ?
+                new PrepareCallbackForEachSerial(toPrepare.update.partitionKey(), toPrepare.update.metadata(),
+                        replicaPlan, queryStartNanoTime, DatabaseDescriptor.getEndpointSnitch())
+                : new PrepareCallback(toPrepare.update.partitionKey(), toPrepare.update.metadata(), replicaPlan, queryStartNanoTime);
         Message<Commit> message = Message.out(PAXOS_PREPARE_REQ, toPrepare);
 
         boolean hasLocalRequest = false;
@@ -728,7 +730,9 @@ public class StorageProxy implements StorageProxyMBean
     private static boolean proposePaxos(Commit proposal, ReplicaPlan.ForPaxosWrite replicaPlan, boolean backoffIfPartial, long queryStartNanoTime)
     throws WriteTimeoutException, CasWriteUnknownResultException
     {
-        ProposeCallback callback = new ProposeCallback(replicaPlan.contacts().size(), replicaPlan.requiredParticipants(), !backoffIfPartial, replicaPlan.consistencyLevel(), queryStartNanoTime);
+        AbstractProposeCallback callback = replicaPlan.consistencyLevel() == EACH_SERIAL ?
+                new ProposeCallbackForEachSerial(replicaPlan, !backoffIfPartial, queryStartNanoTime, DatabaseDescriptor.getEndpointSnitch())
+                : new ProposeCallback(replicaPlan, !backoffIfPartial, queryStartNanoTime);
         Message<Commit> message = Message.out(PAXOS_PROPOSE_REQ, proposal);
         for (Replica replica : replicaPlan.contacts())
         {
@@ -1896,7 +1900,9 @@ public class StorageProxy implements StorageProxyMBean
         {
             final ConsistencyLevel consistencyForReplayCommitsOrFetch = consistencyLevel == ConsistencyLevel.LOCAL_SERIAL
                                                                         ? ConsistencyLevel.LOCAL_QUORUM
-                                                                        : ConsistencyLevel.QUORUM;
+                                                                        : (consistencyLevel == ConsistencyLevel.EACH_SERIAL
+                                                                            ? ConsistencyLevel.EACH_QUORUM
+                                                                            : ConsistencyLevel.QUORUM);
 
             try
             {
@@ -1906,10 +1912,10 @@ public class StorageProxy implements StorageProxyMBean
                     !Paxos.isLinearizable()
                     ? ballot -> null
                     : ballot -> Pair.create(PartitionUpdate.emptyUpdate(metadata, key), null);
-                // When replaying, we commit at quorum/local quorum, as we want to be sure the following read (done at
-                // quorum/local_quorum) sees any replayed updates. Our own update is however empty, and those don't even
-                // get committed due to an optimiation described in doPaxos/beingRepairAndPaxos, so the commit
-                // consistency is irrelevant (we use ANY just to emphasis that we don't wait on our commit).
+                // When replaying, we commit at quorum/local quorum/each quorum, as we want to be sure the following read
+                // (done at quorum/local_quorum/each quorum) sees any replayed updates. Our own update is however empty,
+                // and those don't even get committed due to an optimiation described in doPaxos/beingRepairAndPaxos, so
+                // the commit consistency is irrelevant (we use ANY just to emphasise that we don't wait on our commit).
                 doPaxos(metadata,
                         key,
                         consistencyLevel,

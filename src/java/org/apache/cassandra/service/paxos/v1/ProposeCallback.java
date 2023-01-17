@@ -19,9 +19,14 @@
 package org.apache.cassandra.service.paxos.v1;
 
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.locator.ReplicaPlan;
+import org.apache.cassandra.utils.concurrent.CountDownLatch;
+import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,19 +46,20 @@ import org.apache.cassandra.utils.Nemesis;
  * replay its value; in the latter we don't, so we must timeout in case another
  * leader replays it before we can; see CASSANDRA-6013
  */
-public class ProposeCallback extends AbstractPaxosCallback<Boolean>
+public class ProposeCallback extends AbstractProposeCallback
 {
     private static final Logger logger = LoggerFactory.getLogger(ProposeCallback.class);
 
     @Nemesis private final AtomicInteger accepts = new AtomicInteger(0);
     private final int requiredAccepts;
-    private final boolean failFast;
 
-    public ProposeCallback(int totalTargets, int requiredTargets, boolean failFast, ConsistencyLevel consistency, long queryStartNanoTime)
+    private final CountDownLatch latch;
+
+    public ProposeCallback(ReplicaPlan.ForPaxosWrite replicaPlan, boolean failFast, long queryStartNanoTime)
     {
-        super(totalTargets, consistency, queryStartNanoTime);
-        this.requiredAccepts = requiredTargets;
-        this.failFast = failFast;
+        super(replicaPlan, failFast, queryStartNanoTime);
+        this.requiredAccepts = replicaPlan.requiredParticipants();
+        this.latch = CountDownLatch.newCountDownLatch(replicaPlan.contacts().size());
     }
 
     public void onResponse(Message<Boolean> msg)
@@ -72,16 +78,37 @@ public class ProposeCallback extends AbstractPaxosCallback<Boolean>
         }
     }
 
+    @Override
+    protected void await(long timeout) throws WriteTimeoutException
+    {
+        try
+        {
+            if (!latch.await(timeout, TimeUnit.MILLISECONDS))
+            {
+                throw new WriteTimeoutException(WriteType.CAS, replicaPlan.consistencyLevel(),
+                        replicaPlan.contacts().size() - latch.count(),
+                        replicaPlan.requiredParticipants());
+            }
+        }
+        catch (InterruptedException e)
+        {
+            throw new UncheckedInterruptedException(e);
+        }
+    }
+
+    @Override
     public int getAcceptCount()
     {
         return accepts.get();
     }
 
+    @Override
     public boolean isSuccessful()
     {
         return accepts.get() >= requiredAccepts;
     }
 
+    @Override
     // Note: this is only reliable if !failFast
     public boolean isFullyRefused()
     {

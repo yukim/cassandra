@@ -126,20 +126,22 @@ public class ReplicaPlans
                 break;
             }
             case LOCAL_QUORUM:
+            case LOCAL_SERIAL:
             {
                 Replicas.ReplicaCount localLive = countInOurDc(allLive);
                 if (!localLive.hasAtleast(blockFor, blockForFullReplicas))
                 {
                     if (logger.isTraceEnabled())
                     {
-                        logger.trace(String.format("Local replicas %s are insufficient to satisfy LOCAL_QUORUM requirement of %d live replicas and %d full replicas in '%s'",
-                                                   allLive.filter(InOurDc.replicas()), blockFor, blockForFullReplicas, DatabaseDescriptor.getLocalDataCenter()));
+                        logger.trace(String.format("Local replicas %s are insufficient to satisfy %s requirement of %d live replicas and %d full replicas in '%s'",
+                                                   allLive.filter(InOurDc.replicas()), consistencyLevel, blockFor, blockForFullReplicas, DatabaseDescriptor.getLocalDataCenter()));
                     }
                     throw UnavailableException.create(consistencyLevel, blockFor, blockForFullReplicas, localLive.allReplicas(), localLive.fullReplicas());
                 }
                 break;
             }
             case EACH_QUORUM:
+            case EACH_SERIAL:
                 if (replicationStrategy instanceof NetworkTopologyStrategy)
                 {
                     int total = 0;
@@ -482,8 +484,8 @@ public class ReplicaPlans
     /**
      * Construct the plan for a paxos round - NOT the write or read consistency level for either the write or comparison,
      * but for the paxos linearisation agreement.
-     *
-     * This will select all live nodes as the candidates for the operation.  Only the required number of participants
+     * <p>
+     * This will select all live nodes as the candidates for the operation.
      */
     public static ReplicaPlan.ForPaxosWrite forPaxos(Keyspace keyspace, DecoratedKey key, ConsistencyLevel consistencyForPaxos) throws UnavailableException
     {
@@ -493,6 +495,7 @@ public class ReplicaPlans
 
         Replicas.temporaryAssertFull(liveAndDown.all()); // TODO CASSANDRA-14547
 
+        // LOCAL_SERIAL only involves live and down nodes in the local DC
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
         {
             // TODO: we should cleanup our semantics here, as we're filtering ALL nodes to localDC which is unexpected for ReplicaPlan
@@ -502,13 +505,10 @@ public class ReplicaPlans
 
         ReplicaLayout.ForTokenWrite live = liveAndDown.filter(FailureDetector.isReplicaAlive);
 
-        // TODO: this should use assureSufficientReplicas
         int participants = liveAndDown.all().size();
-        int requiredParticipants = participants / 2 + 1; // See CASSANDRA-8346, CASSANDRA-833
-
+        int requiredParticipants = consistencyForPaxos.blockFor(keyspace.getReplicationStrategy());
         EndpointsForToken contacts = live.all();
-        if (contacts.size() < requiredParticipants)
-            throw UnavailableException.create(consistencyForPaxos, requiredParticipants, contacts.size());
+        assureSufficientLiveReplicasForWrite(keyspace.getReplicationStrategy(), consistencyForPaxos, contacts, liveAndDown.pending());
 
         // We cannot allow CAS operations with 2 or more pending endpoints, see #8346.
         // Note that we fake an impossible number of required nodes in the unavailable exception

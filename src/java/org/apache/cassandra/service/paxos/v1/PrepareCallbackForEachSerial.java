@@ -18,51 +18,77 @@
 
 package org.apache.cassandra.service.paxos.v1;
 
+
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.ReplicaPlan;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.paxos.PrepareResponse;
-import org.apache.cassandra.utils.concurrent.CountDownLatch;
+import org.apache.cassandra.utils.concurrent.Condition;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static org.apache.cassandra.utils.concurrent.CountDownLatch.newCountDownLatch;
 
-public class PrepareCallback extends AbstractPrepareCallback
+public class PrepareCallbackForEachSerial extends AbstractPrepareCallback
 {
-    protected final CountDownLatch latch;
+    private final Map<String, AtomicInteger> responses = new HashMap<>();
+    private final AtomicInteger acks = new AtomicInteger(0);
+    private final IEndpointSnitch snitch;
+    private final Condition condition = Condition.newOneTimeCondition();
 
-    public PrepareCallback(DecoratedKey key, TableMetadata metadata, ReplicaPlan.ForPaxosWrite replicaPlan, long queryStartNanoTime)
+    public PrepareCallbackForEachSerial(DecoratedKey key, TableMetadata metadata, ReplicaPlan.ForPaxosWrite replicaPlan,
+                                        long queryStartNanoTime, IEndpointSnitch snitch)
     {
         super(key, metadata, replicaPlan, queryStartNanoTime);
-        this.latch = newCountDownLatch(replicaPlan.requiredParticipants());
+        this.snitch = snitch;
+
+        if (replicaPlan.replicationStrategy() instanceof NetworkTopologyStrategy)
+        {
+            NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) replicaPlan.replicationStrategy();
+            for (String dc : strategy.getDatacenters())
+            {
+                int rf = strategy.getReplicationFactor(dc).allReplicas;
+                responses.put(dc, new AtomicInteger((rf / 2) + 1));
+            }
+        }
     }
 
     @Override
     public void signalWhenReady(Message<PrepareResponse> message)
     {
-        latch.decrement();
+        String dc = snitch.getDatacenter(message.from());
+        responses.get(dc).getAndDecrement();
+        acks.incrementAndGet();
+        for (AtomicInteger i : responses.values())
+        {
+            if (i.get() > 0)
+                return;
+        }
+        signal();
     }
 
     @Override
     protected void signal()
     {
-        while (latch.count() > 0)
-            latch.decrement();
+        condition.signalAll();
     }
 
     public void await(long timeout) throws WriteTimeoutException
     {
         try
         {
-            if (!latch.await(timeout, NANOSECONDS))
+            if (!condition.await(timeout, NANOSECONDS))
             {
                 throw new WriteTimeoutException(WriteType.CAS, replicaPlan.consistencyLevel(),
-                        replicaPlan.requiredParticipants() - latch.count(),
-                        replicaPlan.requiredParticipants());
+                        acks.get(), replicaPlan.requiredParticipants());
             }
         }
         catch (InterruptedException e)

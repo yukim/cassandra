@@ -147,4 +147,11 @@ public class CASMultiDCTest
         }));
         testLocalSerialCommit(LOCAL_SERIAL, QUORUM, nextKey.getAndIncrement(), true);
     }
+
+    @Test
+    public void testEachSerialEachQuorumCommit()
+    {
+        testLocalSerialCommit(EACH_SERIAL, EACH_QUORUM, nextKey.getAndIncrement(), true);
+    }
+
 }

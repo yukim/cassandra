@@ -45,7 +45,8 @@ public enum ConsistencyLevel
     SERIAL      (8),
     LOCAL_SERIAL(9, true),
     LOCAL_ONE   (10, true),
-    NODE_LOCAL  (11, true);
+    NODE_LOCAL  (11, true),
+    EACH_SERIAL(12);
 
     // Used by the binary protocol
     public final int code;
@@ -152,6 +153,7 @@ public enum ConsistencyLevel
             case LOCAL_SERIAL:
                 return localQuorumForOurDc(replicationStrategy);
             case EACH_QUORUM:
+            case EACH_SERIAL:
                 if (replicationStrategy instanceof NetworkTopologyStrategy)
                 {
                     NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) replicationStrategy;
@@ -184,7 +186,7 @@ public enum ConsistencyLevel
                 break;
             case ONE: case TWO: case THREE:
             case QUORUM: case EACH_QUORUM:
-            case SERIAL:
+            case SERIAL: case EACH_SERIAL:
             case ALL:
                 blockFor += pending.size();
         }
@@ -220,6 +222,7 @@ public enum ConsistencyLevel
         {
             case SERIAL:
             case LOCAL_SERIAL:
+            case EACH_SERIAL:
                 throw new InvalidRequestException("You must use conditional updates for serializable writes");
         }
     }
@@ -234,6 +237,7 @@ public enum ConsistencyLevel
                 break;
             case SERIAL:
             case LOCAL_SERIAL:
+            case EACH_SERIAL:
                 throw new InvalidRequestException(this + " is not supported as conditional update commit consistency. Use ANY if you mean \"make sure it is accepted but I don't care how many replicas commit it for non-SERIAL reads\"");
         }
     }
@@ -246,7 +250,7 @@ public enum ConsistencyLevel
 
     public boolean isSerialConsistency()
     {
-        return this == SERIAL || this == LOCAL_SERIAL;
+        return this == SERIAL || this == LOCAL_SERIAL || this == EACH_SERIAL;
     }
 
     public void validateCounterForWrite(TableMetadata metadata) throws InvalidRequestException

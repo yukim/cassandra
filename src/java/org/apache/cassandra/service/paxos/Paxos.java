@@ -1079,6 +1079,7 @@ public class Paxos
         {
             default: throw new IllegalStateException();
             case SERIAL: return QUORUM;
+            case EACH_SERIAL: return EACH_QUORUM;
             case LOCAL_SERIAL: return LOCAL_QUORUM;
         }
     }
@@ -1136,7 +1137,7 @@ public class Paxos
 
     private static Ballot.Flag flag(ConsistencyLevel consistency)
     {
-        return consistency == SERIAL ? GLOBAL : LOCAL;
+        return consistency == LOCAL_SERIAL ? LOCAL : GLOBAL;
     }
 
     public static ConsistencyLevel consistency(Ballot ballot)
