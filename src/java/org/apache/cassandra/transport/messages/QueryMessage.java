@@ -20,6 +20,12 @@ package org.apache.cassandra.transport.messages;
 import com.google.common.collect.ImmutableMap;
 
 import io.netty.buffer.ByteBuf;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryEvents;
 import org.apache.cassandra.cql3.QueryHandler;
@@ -28,12 +34,16 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.ProtocolVersion;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
+
+import java.net.InetAddress;
 
 import static org.apache.cassandra.utils.Clock.Global.currentTimeMillis;
 
@@ -129,6 +139,24 @@ public class QueryMessage extends Message.Request
                 logger.error("Unexpected error during query", e);
             return ErrorMessage.fromException(e);
         }
+    }
+
+    @Override
+    protected Span createSpan(InetAddress clientAddress, Context context) {
+        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(query);
+        spanBuilder.setSpanKind(SpanKind.SERVER);
+        spanBuilder.setParent(context);
+        AttributesBuilder attributes = Attributes.builder();
+        attributes.put("type", type.name());
+        attributes.put("client", clientAddress.toString());
+        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        if (options.getPageSize() > 0)
+            attributes.put("page_size", Integer.toString(options.getPageSize()));
+        if (options.getConsistency() != null)
+            attributes.put("consistency_level", options.getConsistency().name());
+        if (options.getSerialConsistency() != null)
+            attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+        return spanBuilder.setAllAttributes(attributes.build()).startSpan();
     }
 
     private void traceQuery(QueryState state)

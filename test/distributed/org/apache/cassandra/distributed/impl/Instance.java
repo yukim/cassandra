@@ -521,7 +521,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
 
             if (runOnCaller)
             {
-                try (Closeable close = ExecutorLocals.create(state))
+                try (Closeable close = ExecutorLocals.create(state, null))
                 {
                     MessagingService.instance().inboundSink.accept(messageIn);
                 }
@@ -535,7 +535,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                     inInstancelogger.warn("Dropping message {} due to stage {} being shutdown", messageIn, header.verb.stage);
                     return;
                 }
-                executor.execute(ExecutorLocals.create(state), () -> MessagingService.instance().inboundSink.accept(messageIn));
+                executor.execute(ExecutorLocals.create(state, null), () -> MessagingService.instance().inboundSink.accept(messageIn));
             }
         };
     }

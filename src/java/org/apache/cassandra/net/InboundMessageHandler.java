@@ -17,31 +17,35 @@
  */
 package org.apache.cassandra.net;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import org.apache.cassandra.concurrent.ExecutorLocals;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.exceptions.IncompatibleSchemaException;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.net.Message.Header;
-import org.apache.cassandra.net.FrameDecoder.IntactFrame;
 import org.apache.cassandra.net.FrameDecoder.CorruptFrame;
+import org.apache.cassandra.net.FrameDecoder.IntactFrame;
+import org.apache.cassandra.net.Message.Header;
 import org.apache.cassandra.net.ResourceLimits.Limit;
 import org.apache.cassandra.tcm.ClusterMetadataService;
+import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.NoSpamLogger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.apache.cassandra.utils.MonotonicClock.Global.approxTime;
@@ -394,11 +398,32 @@ public class InboundMessageHandler extends AbstractMessageHandler
     {
         Header header = task.header();
 
+        Context otelContext = header.traceContext();
+
         TraceState state = Tracing.instance.initializeFromMessage(header);
         if (state != null) state.trace("{} message received from {}", header.verb, header.from);
 
         callbacks.onDispatched(task.size(), header);
-        header.verb.stage.execute(ExecutorLocals.create(state), task);
+        header.verb.stage.execute(ExecutorLocals.create(state, otelContext), () -> {
+            // Create span only when SpanContext is from remote
+            Span span = Span.fromContext(otelContext);
+            if (span.getSpanContext().isRemote()) {
+                Attributes attributes = Attributes.builder()
+                        .put("verb", header.verb.name())
+                        .put("thread", Thread.currentThread().getName())
+                        .build();
+                span = Telemetry.getRequestTracer()
+                        .spanBuilder(header.verb + " message received from " + header.from)
+                        .setParent(otelContext)
+                        .setAllAttributes(attributes)
+                        .startSpan();
+            }
+            try (Scope scope = span.makeCurrent()) {
+                task.run();
+            } finally {
+                span.end();
+            }
+        });
     }
 
     private abstract class ProcessMessage implements Runnable

@@ -17,27 +17,29 @@
  */
 package org.apache.cassandra.transport.messages;
 
+import java.net.InetAddress;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.collect.ImmutableMap;
-
 import io.netty.buffer.ByteBuf;
-import org.apache.cassandra.cql3.CQLStatement;
-import org.apache.cassandra.cql3.ColumnSpecification;
-import org.apache.cassandra.cql3.QueryEvents;
-import org.apache.cassandra.cql3.QueryHandler;
-import org.apache.cassandra.cql3.QueryOptions;
-import org.apache.cassandra.cql3.ResultSet;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.statements.BatchStatement;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.ProtocolVersion;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.MD5Digest;
 import org.apache.cassandra.utils.NoSpamLogger;
@@ -119,6 +121,44 @@ public class ExecuteMessage extends Message.Request
     }
 
     @Override
+    protected Span createSpan(InetAddress clientAddress, Context context) {
+        QueryHandler.Prepared prepared = ClientState.getCQLQueryHandler().getPrepared(statementId);
+        if (prepared != null)
+        {
+            SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(prepared.rawCQLStatement);
+            spanBuilder.setSpanKind(SpanKind.SERVER);
+            spanBuilder.setParent(context);
+            AttributesBuilder attributes = Attributes.builder();
+            attributes.put("type", type.name());
+            attributes.put("client", clientAddress.toString());
+            attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+            if (options.getPageSize() > 0)
+                attributes.put("page_size", Integer.toString(options.getPageSize()));
+            if (options.getConsistency() != null)
+                attributes.put("consistency_level", options.getConsistency().name());
+            if (options.getSerialConsistency() != null)
+                attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+
+            for (int i = 0; i < prepared.statement.getBindVariables().size(); i++) {
+                ColumnSpecification cs = prepared.statement.getBindVariables().get(i);
+                String boundName = cs.name.toString();
+                String boundValue = cs.type.asCQL3Type().toCQLLiteral(options.getValues().get(i));
+                if (boundValue.length() > 1000)
+                    boundValue = boundValue.substring(0, 1000) + "...'";
+
+                //Here we prefix boundName with the index to avoid possible collission in builder keys due to
+                //having multiple boundValues for the same variable
+                attributes.put("bound_var_" + i + '_' + boundName, boundValue);
+            }
+            return spanBuilder.setAllAttributes(attributes.build()).startSpan();
+        }
+        else
+        {
+            return Span.getInvalid();
+        }
+    }
+
+    @Override
     protected boolean isTrackable()
     {
         return true;
@@ -156,7 +196,7 @@ public class ExecuteMessage extends Message.Request
                 throw new ProtocolException("The page size cannot be 0");
 
             if (traceRequest)
-                traceQuery(state, prepared);
+                Tracing.instance.begin("Execute CQL3 prepared query", state.getClientAddress(), getInitialTraceParameters());
 
             // Some custom QueryHandlers are interested by the bound names. We provide them this information
             // by wrapping the QueryOptions.
@@ -206,34 +246,6 @@ public class ExecuteMessage extends Message.Request
             JVMStabilityInspector.inspectThrowable(e);
             return ErrorMessage.fromException(e);
         }
-    }
-
-    private void traceQuery(QueryState state, QueryHandler.Prepared prepared)
-    {
-        ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
-        if (options.getPageSize() > 0)
-            builder.put("page_size", Integer.toString(options.getPageSize()));
-        if (options.getConsistency() != null)
-            builder.put("consistency_level", options.getConsistency().name());
-        if (options.getSerialConsistency() != null)
-            builder.put("serial_consistency_level", options.getSerialConsistency().name());
-
-        builder.put("query", prepared.rawCQLStatement);
-
-        for (int i = 0; i < prepared.statement.getBindVariables().size(); i++)
-        {
-            ColumnSpecification cs = prepared.statement.getBindVariables().get(i);
-            String boundName = cs.name.toString();
-            String boundValue = cs.type.asCQL3Type().toCQLLiteral(options.getValues().get(i));
-            if (boundValue.length() > 1000)
-                boundValue = boundValue.substring(0, 1000) + "...'";
-
-            //Here we prefix boundName with the index to avoid possible collission in builder keys due to
-            //having multiple boundValues for the same variable
-            builder.put("bound_var_" + i + '_' + boundName, boundValue);
-        }
-
-        Tracing.instance.begin("Execute CQL3 prepared query", state.getClientAddress(), builder.build());
     }
 
     @Override

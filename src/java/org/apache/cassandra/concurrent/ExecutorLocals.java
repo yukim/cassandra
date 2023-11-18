@@ -19,6 +19,7 @@
 package org.apache.cassandra.concurrent;
 
 import io.netty.util.concurrent.FastThreadLocal;
+import io.opentelemetry.context.Context;
 import org.apache.cassandra.service.ClientWarn;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.utils.Closeable;
@@ -32,7 +33,7 @@ import org.apache.cassandra.utils.WithResources;
  */
 public class ExecutorLocals implements WithResources, Closeable
 {
-    private static final ExecutorLocals none = new ExecutorLocals(null, null);
+    private static final ExecutorLocals none = new ExecutorLocals(null, null, null);
     private static final FastThreadLocal<ExecutorLocals> locals = new FastThreadLocal<ExecutorLocals>()
     {
         @Override
@@ -44,20 +45,23 @@ public class ExecutorLocals implements WithResources, Closeable
 
     public static class Impl
     {
-        protected static void set(TraceState traceState, ClientWarn.State clientWarnState)
+        protected static void set(TraceState traceState, ClientWarn.State clientWarnState, Context context)
         {
             if (traceState == null && clientWarnState == null) locals.set(none);
-            else locals.set(new ExecutorLocals(traceState, clientWarnState));
+            else locals.set(new ExecutorLocals(traceState, clientWarnState, context));
         }
     }
 
     public final TraceState traceState;
     public final ClientWarn.State clientWarnState;
 
-    protected ExecutorLocals(TraceState traceState, ClientWarn.State clientWarnState)
+    public final Context context;
+
+    protected ExecutorLocals(TraceState traceState, ClientWarn.State clientWarnState, Context context)
     {
         this.traceState = traceState;
         this.clientWarnState = clientWarnState;
+        this.context = context;
     }
 
     /**
@@ -78,10 +82,11 @@ public class ExecutorLocals implements WithResources, Closeable
         return locals == none ? WithResources.none() : locals;
     }
 
-    public static ExecutorLocals create(TraceState traceState)
+    public static ExecutorLocals create(TraceState traceState, Context context)
     {
         ExecutorLocals current = locals.get();
-        return current.traceState == traceState ? current : new ExecutorLocals(traceState, current.clientWarnState);
+        current = current.traceState == traceState ? current : new ExecutorLocals(traceState, current.clientWarnState, current.context);
+        return current.context == context ? current : new ExecutorLocals(current.traceState, current.clientWarnState, context);
     }
 
     public static void clear()

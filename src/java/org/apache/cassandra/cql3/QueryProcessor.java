@@ -35,6 +35,8 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.primitives.Ints;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,7 +91,6 @@ import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.pager.QueryPager;
 import org.apache.cassandra.tcm.ClusterMetadata;
-import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -878,14 +879,14 @@ public class QueryProcessor implements QueryHandler
     public static CQLStatement getStatement(String queryStr, ClientState clientState)
     throws RequestValidationException
     {
-        Tracing.trace("Parsing {}", queryStr);
+        Span.current().addEvent(String.format("Parsing %s", queryStr));
         CQLStatement.Raw statement = parseStatement(queryStr);
 
         // Set keyspace for statement that require login
         if (statement instanceof QualifiedStatement)
             ((QualifiedStatement) statement).setKeyspace(clientState);
 
-        Tracing.trace("Preparing statement");
+        Span.current().addEvent("Preparing statement");
         CQLStatement prepared = statement.prepare(clientState);
         // Set CQL string for AlterSchemaStatement as this is used to serialize the transformation
         // in the cluster metadata log
@@ -919,11 +920,13 @@ public class QueryProcessor implements QueryHandler
         }
         catch (CassandraException ce)
         {
+            Span.current().setStatus(StatusCode.ERROR, ce.getMessage());
             throw ce;
         }
         catch (RuntimeException re)
         {
             logger.error(String.format("The statement: [%s] could not be parsed.", queryStr), re);
+            Span.current().setStatus(StatusCode.ERROR, re.getMessage());
             throw new SyntaxException(String.format("Failed parsing statement: [%s] reason: %s %s",
                                                     queryStr,
                                                     re.getClass().getSimpleName(),
@@ -931,6 +934,7 @@ public class QueryProcessor implements QueryHandler
         }
         catch (RecognitionException e)
         {
+            Span.current().setStatus(StatusCode.ERROR, e.getMessage());
             throw new SyntaxException("Invalid or malformed CQL query string: " + e.getMessage());
         }
     }

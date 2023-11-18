@@ -78,7 +78,7 @@ public class DriverBurnTest extends CQLTester
             {
                 QueryMessage queryMessage = QueryMessage.codec.decode(body, version);
                 return new QueryMessage(queryMessage.query, queryMessage.options) {
-                    protected Message.Response execute(QueryState state, long queryStartNanoTime, boolean traceRequest)
+                    protected Message.Response executeInternal(QueryState state, long queryStartNanoTime)
                     {
                         try
                         {
@@ -89,7 +89,7 @@ public class DriverBurnTest extends CQLTester
                         catch (NumberFormatException e)
                         {
                             // for the requests driver issues under the hood
-                            return super.execute(state, queryStartNanoTime, traceRequest);
+                            return super.execute(state, queryStartNanoTime);
                         }
                     }
                 };
@@ -338,7 +338,7 @@ public class DriverBurnTest extends CQLTester
             {
                 QueryMessage queryMessage = QueryMessage.codec.decode(body, version);
                 return new QueryMessage(queryMessage.query, queryMessage.options) {
-                    protected Message.Response execute(QueryState state, long queryStartNanoTime, boolean traceRequest)
+                    protected Message.Response executeInternal(QueryState state, long queryStartNanoTime)
                     {
                         try
                         {
@@ -348,7 +348,7 @@ public class DriverBurnTest extends CQLTester
                         catch (NumberFormatException e)
                         {
                             // for the requests driver issues under the hood
-                            return super.execute(state, queryStartNanoTime, traceRequest);
+                            return super.execute(state, queryStartNanoTime);
                         }
                     }
                 };
