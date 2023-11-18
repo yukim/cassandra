@@ -18,6 +18,7 @@
 package org.apache.cassandra.service.reads;
 
 import com.google.common.base.Preconditions;
+import io.opentelemetry.api.trace.Span;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,6 +144,7 @@ public abstract class AbstractReadExecutor
                 continue;
             }
 
+            Span.current().addEvent(String.format("reading %s from %s", readCommand.isDigestQuery() ? "digest" : "data", endpoint));
             if (traceState != null)
                 traceState.trace("reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
 
@@ -324,6 +326,7 @@ public abstract class AbstractReadExecutor
                 // nor would we be able to speculate a new 'write' if the repair writes are insufficient
                 super.replicaPlan.addToContacts(extraReplica);
 
+                Span.current().addEvent(String.format("speculating read retry on %s", extraReplica));
                 if (traceState != null)
                     traceState.trace("speculating read retry on {}", extraReplica);
                 logger.trace("speculating read retry on {}", extraReplica);

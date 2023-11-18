@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.transport.messages;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,25 +25,25 @@ import java.util.List;
 import com.google.common.collect.ImmutableMap;
 
 import io.netty.buffer.ByteBuf;
-import org.apache.cassandra.cql3.Attributes;
-import org.apache.cassandra.cql3.BatchQueryOptions;
-import org.apache.cassandra.cql3.CQLStatement;
-import org.apache.cassandra.cql3.QueryEvents;
-import org.apache.cassandra.cql3.QueryHandler;
-import org.apache.cassandra.cql3.QueryOptions;
-import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.VariableSpecifications;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
+import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.statements.BatchStatement;
 import org.apache.cassandra.cql3.statements.ModificationStatement;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.transport.ProtocolVersion;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.MD5Digest;
 
@@ -239,6 +240,47 @@ public class BatchMessage extends Message.Request
         }
     }
 
+    @Override
+    protected Span createSpan(InetAddress clientAddress, Context context) {
+        QueryHandler handler = ClientState.getCQLQueryHandler();
+        List<String> queries = new ArrayList<>(queryOrIdList.size());
+        for (Object query : queryOrIdList)
+        {
+            QueryHandler.Prepared p;
+            if (query instanceof String)
+            {
+                queries.add((String) query);
+            }
+            else
+            {
+                p = handler.getPrepared((MD5Digest)query);
+                if (p != null) {
+                    queries.add(p.rawCQLStatement);
+                }
+                else
+                {
+                    // When the prepared statement cannot be found, return early without actual Span
+                    return Span.getInvalid();
+                }
+            }
+        }
+
+        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(String.join("|", queries));
+        spanBuilder.setSpanKind(SpanKind.SERVER);
+        spanBuilder.setParent(context);
+        AttributesBuilder attributes = io.opentelemetry.api.common.Attributes.builder();
+        attributes.put("type", type.name());
+        attributes.put("client", clientAddress.toString());
+        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        if (options.getPageSize() > 0)
+            attributes.put("page_size", Integer.toString(options.getPageSize()));
+        if (options.getConsistency() != null)
+            attributes.put("consistency_level", options.getConsistency().name());
+        if (options.getSerialConsistency() != null)
+            attributes.put("serial_consistency_level", options.getSerialConsistency().name());
+        return spanBuilder.setAllAttributes(attributes.build()).startSpan();
+    }
+
     private void traceQuery(QueryState state)
     {
         ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
@@ -246,7 +288,6 @@ public class BatchMessage extends Message.Request
             builder.put("consistency_level", options.getConsistency().name());
         if (options.getSerialConsistency() != null)
             builder.put("serial_consistency_level", options.getSerialConsistency().name());
-
         // TODO we don't have [typed] access to CQL bind variables here.  CASSANDRA-4560 is open to add support.
         Tracing.instance.begin("Execute batch of CQL3 queries", state.getClientAddress(), builder.build());
     }

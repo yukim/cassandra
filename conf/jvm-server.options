@@ -116,7 +116,7 @@
 -XX:+HeapDumpOnOutOfMemoryError
 
 # Per-thread stack size.
--Xss256k
+-Xss512k
 
 # Make sure all memory is faulted and zeroed on startup.
 # This helps prevent soft faults in containers and makes

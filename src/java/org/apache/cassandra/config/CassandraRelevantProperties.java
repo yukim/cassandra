@@ -210,6 +210,7 @@ public enum CassandraRelevantProperties
      * Whether {@link org.apache.cassandra.db.ConsistencyLevel#NODE_LOCAL} should be allowed.
      */
     ENABLE_NODELOCAL_QUERIES("cassandra.enable_nodelocal_queries"),
+    ENABLE_OPENTELEMETRY("cassandra.enable_opentelemetry", "false"),
     EXPIRATION_DATE_OVERFLOW_POLICY("cassandra.expiration_date_overflow_policy"),
     EXPIRATION_OVERFLOW_WARNING_INTERVAL_MINUTES("cassandra.expiration_overflow_warning_interval_minutes", "5"),
     FAILURE_LOGGING_INTERVAL_SECONDS("cassandra.request_failure_log_interval_seconds", "60"),

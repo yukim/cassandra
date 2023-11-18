@@ -27,6 +27,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.Span;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +43,7 @@ import org.apache.cassandra.net.ParamType;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.TimeUUID;
+import org.slf4j.helpers.MessageFormatter;
 
 import static org.apache.cassandra.config.CassandraRelevantProperties.CUSTOM_TRACING_CLASS;
 import static org.apache.cassandra.utils.TimeUUID.Generator.nextTimeUUID;
@@ -152,7 +155,7 @@ public abstract class Tracing extends ExecutorLocals.Impl
      */
     public static boolean isTracing()
     {
-        return instance.get() != null;
+        return instance.get() != null || ExecutorLocals.current().context != null;
     }
 
     public TimeUUID newSession(Map<String,ByteBuffer> customPayload)
@@ -230,7 +233,7 @@ public abstract class Tracing extends ExecutorLocals.Impl
     public void set(TraceState tls)
     {
         ExecutorLocals current = ExecutorLocals.current();
-        ExecutorLocals.Impl.set(tls, current.clientWarnState);
+        ExecutorLocals.Impl.set(tls, current.clientWarnState, current.context);
     }
 
     public TraceState begin(final String request, final Map<String, String> parameters)
@@ -327,6 +330,8 @@ public abstract class Tracing extends ExecutorLocals.Impl
     // normal traces get zero-, one-, and two-argument overloads so common case doesn't need to create varargs array
     public static void trace(String message)
     {
+        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Span.current().addEvent(message, attr);
         final TraceState state = instance.get();
         if (state == null) // inline isTracing to avoid implicit two calls to state.get()
             return;
@@ -336,29 +341,41 @@ public abstract class Tracing extends ExecutorLocals.Impl
 
     public static void trace(String format, Object arg)
     {
+        String message = MessageFormatter.format(format, arg).getMessage();
+        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Span.current().addEvent(message, attr);
+
         final TraceState state = instance.get();
         if (state == null) // inline isTracing to avoid implicit two calls to state.get()
             return;
 
-        state.trace(format, arg);
+        state.trace(message);
     }
 
     public static void trace(String format, Object arg1, Object arg2)
     {
+        String message = MessageFormatter.format(format, arg1, arg2).getMessage();
+        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Span.current().addEvent(message, attr);
+
         final TraceState state = instance.get();
         if (state == null) // inline isTracing to avoid implicit two calls to state.get()
             return;
 
-        state.trace(format, arg1, arg2);
+        state.trace(message);
     }
 
     public static void trace(String format, Object... args)
     {
+        String message = MessageFormatter.arrayFormat(format, args).getMessage();
+        Attributes attr = Attributes.builder().put("thread", Thread.currentThread().getName()).build();
+        Span.current().addEvent(message, attr);
+
         final TraceState state = instance.get();
         if (state == null) // inline isTracing to avoid implicit two calls to state.get()
             return;
 
-        state.trace(format, args);
+        state.trace(message);
     }
 
     /**

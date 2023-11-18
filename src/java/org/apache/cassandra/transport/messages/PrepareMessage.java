@@ -17,24 +17,30 @@
  */
 package org.apache.cassandra.transport.messages;
 
-import java.util.concurrent.TimeUnit;
-
-import com.google.common.collect.ImmutableMap;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.netty.buffer.ByteBuf;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.context.Context;
 import org.apache.cassandra.cql3.QueryEvents;
 import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.telemetry.Telemetry;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.transport.ProtocolVersion;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.NoSpamLogger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.InetAddress;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.cassandra.utils.Clock.Global.currentTimeMillis;
 
@@ -114,12 +120,24 @@ public class PrepareMessage extends Message.Request
     }
 
     @Override
+    protected Span createSpan(InetAddress clientAddress, Context context) {
+        SpanBuilder spanBuilder = Telemetry.getRequestTracer().spanBuilder(query);
+        spanBuilder.setSpanKind(SpanKind.INTERNAL);
+        spanBuilder.setParent(context);
+        AttributesBuilder attributes = Attributes.builder();
+        attributes.put("type", type.name());
+        attributes.put("client", clientAddress.toString());
+        attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
+        return spanBuilder.setAllAttributes(attributes.build()).startSpan();
+    }
+
+    @Override
     protected Message.Response execute(QueryState state, long queryStartNanoTime, boolean traceRequest)
     {
         try
         {
             if (traceRequest)
-                Tracing.instance.begin("Preparing CQL3 query", state.getClientAddress(), ImmutableMap.of("query", query));
+                Tracing.instance.begin("Preparing CQL3 query", state.getClientAddress(), getInitialTraceParameters());
 
             ClientState clientState = state.getClientState().cloneWithKeyspaceIfSet(keyspace);
             QueryHandler queryHandler = ClientState.getCQLQueryHandler();

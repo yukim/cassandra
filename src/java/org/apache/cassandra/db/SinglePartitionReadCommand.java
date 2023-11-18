@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
 
+import io.opentelemetry.api.trace.Span;
 import org.apache.cassandra.cache.IRowCacheEntry;
 import org.apache.cassandra.cache.RowCacheKey;
 import org.apache.cassandra.cache.RowCacheSentinel;
@@ -649,7 +650,6 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
     public UnfilteredRowIterator queryMemtableAndDisk(ColumnFamilyStore cfs, ReadExecutionController executionController)
     {
         assert executionController != null && executionController.validForReadOn(cfs);
-        Tracing.trace("Executing single-partition query on {}", cfs.name);
 
         return queryMemtableAndDiskInternal(cfs, executionController);
     }
@@ -681,7 +681,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
             return queryMemtableAndSSTablesInTimestampOrder(cfs, (ClusteringIndexNamesFilter)clusteringIndexFilter(), controller);
         }
 
-        Tracing.trace("Acquiring sstable references");
+        Span.current().addEvent(String.format("Executing single-partition query on %s", cfs.name));
+        Span.current().addEvent("Acquiring sstable references");
         ColumnFamilyStore.ViewFragment view = cfs.select(View.select(SSTableSet.LIVE, partitionKey()));
         view.sstables.sort(SSTableReader.maxTimestampDescending);
         ClusteringIndexFilter filter = clusteringIndexFilter();
@@ -726,7 +727,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
             int includedDueToTombstones = 0;
 
             if (controller.isTrackingRepairedStatus())
-                Tracing.trace("Collecting data from sstables and tracking repaired status");
+                Span.current().addEvent("Collecting data from sstables and tracking repaired status");
 
             for (SSTableReader sstable : view.sstables)
             {
@@ -794,9 +795,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                 }
             }
 
-            if (Tracing.isTracing())
-                Tracing.trace("Skipped {}/{} non-slice-intersecting sstables, included {} due to tombstones",
-                               nonIntersectingSSTables, view.sstables.size(), includedDueToTombstones);
+            Span.current().addEvent(String.format("Skipped %d/%d non-slice-intersecting sstables, included %d due to tombstones",
+                               nonIntersectingSSTables, view.sstables.size(), includedDueToTombstones));
 
             if (inputCollector.isEmpty())
                 return EmptyIterators.unfilteredRow(cfs.metadata(), partitionKey(), filter.isReversed());
@@ -890,7 +890,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
            {
                int mergedSSTablesIterated = metricsCollector.getMergedSSTables();
                metrics.updateSSTableIterated(mergedSSTablesIterated);
-               Tracing.trace("Merged data from memtables and {} sstables", mergedSSTablesIterated);
+               Span.current().addEvent(String.format("Merged data from memtables and %d sstables", mergedSSTablesIterated));
            }
         }
         return Transformation.apply(merged, new UpdateSstablesIterated());
@@ -917,13 +917,13 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
      */
     private UnfilteredRowIterator queryMemtableAndSSTablesInTimestampOrder(ColumnFamilyStore cfs, ClusteringIndexNamesFilter filter, ReadExecutionController controller)
     {
-        Tracing.trace("Acquiring sstable references");
+        Span.current().addEvent("Acquiring sstable references");
         ColumnFamilyStore.ViewFragment view = cfs.select(View.select(SSTableSet.LIVE, partitionKey()));
 
         ImmutableBTreePartition result = null;
         SSTableReadMetricsCollector metricsCollector = new SSTableReadMetricsCollector();
 
-        Tracing.trace("Merging memtable contents");
+        Span.current().addEvent("Merging memtable contents");
         for (Memtable memtable : view.memtables)
         {
             try (UnfilteredRowIterator iter = memtable.rowIterator(partitionKey, filter.getSlices(metadata()), columnFilter(), isReversed(), metricsCollector))

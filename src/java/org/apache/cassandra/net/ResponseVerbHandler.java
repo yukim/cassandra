@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.net;
 
+import io.opentelemetry.api.trace.Span;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +47,7 @@ class ResponseVerbHandler implements IVerbHandler
 
         long latencyNanos = approxTime.now() - callbackInfo.createdAtNanos;
         Tracing.trace("Processing response from {}", message.from());
+        Span.current().addEvent(String.format("Processing response from %s", message.from()));
 
         RequestCallback cb = callbackInfo.callback;
         if (message.isFailureResponse())
