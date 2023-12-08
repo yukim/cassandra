@@ -148,7 +148,9 @@ public class QueryMessage extends Message.Request
         spanBuilder.setParent(context);
         AttributesBuilder attributes = Attributes.builder();
         attributes.put("type", type.name());
-        attributes.put("client", clientAddress.toString());
+        // clientAddress can be null if the client is accessed through non ip based access (eg: unix socket)
+        if (clientAddress != null)
+            attributes.put("client", clientAddress.toString());
         attributes.put("coordinator", FBUtilities.getBroadcastNativeAddressAndPort().toString());
         if (options.getPageSize() > 0)
             attributes.put("page_size", Integer.toString(options.getPageSize()));
